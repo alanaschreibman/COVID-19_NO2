@@ -59,3 +59,47 @@ dim(owid.filtered)
 head(owid.filtered)
 tail(owid.filtered)
 ```
+
+#### Continent Analysis
+Data is filtered to remove entries for specific country locations and include only data that aggregates COVID-19 outcomes on a continent and world scale. 
+```{r, eval = TRUE}
+owid.continents <- owid.filtered %>%
+                    filter(is.na(continent)) %>%
+                    select(-continent) #Used missingness properties to select only continent rows and then removed continent column. 
+table(owid.continents$location)
+```
+
+#### Country Analysis
+Data is filtered to include only country-specific COVID-19 outcomes and exclude continent and world-wide data.  
+```{r, eval = TRUE}
+owid.countries <- owid.filtered %>%
+                    filter(!is.na(continent)) #Removed all rows with NA for continent, leaving behind only countries. 
+table(owid.countries$continent)
+```
+
+#### Tests for Missingness
+```{r, eval = TRUE}
+table(owid.filtered$totcases, useNA = "ifany") %>%
+  tail() #No missing values for total cases column. 
+table(owid.filtered$totdeaths, useNA = "ifany") %>%
+  tail() #Several missing values for total deaths column. Keep this in mind when analyzing. 
+which(is.na(owid.filtered$totdeaths))
+#Missing countries: Butan, Cambodia, Dominica, Eritrea, Fiji, Grenada, Laos, Lesotho, Mongolia, Namibia, Saint Kitts and Nevis, Saint Lucia, Saint Vincent and the Grenadines, Seychelles, Timor, Uganda, Vatican, Vietnam.
+
+#Missingness for confounders: 
+owid.countries[!complete.cases(owid.countries), ] #Most missingness in smoking categories. 
+```
+
+#### Modified Data Frames
+Filtered OWID data frames further narrowed to COVID-19 cases only, deaths only, and hospitalizations only, separated by continent and by country respectively. 
+```{r, eval = FALSE}
+#By continent:
+select(owid.continents, c(iso.code:totcases, totcases.mil)) #COVID-19 cases by continent. 
+select(owid.continents, c(iso.code:date, totdeaths, totdeaths.mil)) #COVID-19 deaths by continent. 
+select(owid.continents, c(iso.code:date, hosp.patients, hosp.patients.mil)) #COVID-19 hospitalizations by continent. 
+
+#By country:
+select(owid.countries, c(iso.code:totcases, totcases.mil)) #COVID-19 cases by country. 
+select(owid.countries, c(iso.code:date, totdeaths, totdeaths.mil)) #COVID-19 deaths by country. 
+select(owid.countries, c(iso.code:date, hosp.patients, hosp.patients.mil)) #COVID-19 hospitalizations by country.  
+```
