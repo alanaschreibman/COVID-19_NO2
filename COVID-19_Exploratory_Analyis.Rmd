@@ -372,3 +372,105 @@ for (i in c("North America", "Europe", "Asia", "Africa", "Oceania", "South Ameri
   print(pop.den.lm.cases.cont(i))
 } #Loops function for continents of interest.
 ```
+
+## GDP and COVID-19 Outcomes
+### GDP and COVID-19 Cases per Million
+First, a linear regression is performed on world COVID-19 cases and GDP. Then, scatter plots with a smooth line showing the relationship between GDP per capita and COVID-19 cases per million people are the outputs of the function below: 
+```{r, eval = TRUE}
+ggplot(data = owid.countries, aes(x = gdp.cap, y = totcases.mil)) +
+  geom_point(color = "#333aff") +
+  geom_smooth(color = "red") +
+  geom_smooth(method = "lm", color = "purple") +
+  theme_bw() +
+  labs(x = "GDP per Capita", y = "Total COVID-19 Cases per Million People") +
+  labs(title = paste0("World COVID-19 Cases per Million People in vs. GDP per Capita")) #COVID-19 cases and GDP per capita on world scale. Red line is smooth fit; purple line is linear fit. 
+cor(owid.countries$totcases.mil, owid.countries$gdp.cap, use = "complete.obs") 
+gdp.lm.cases <- lm(totcases.mil ~ gdp.cap, data = owid.countries)
+gdp.lm.cases
+summary.lm(gdp.lm.cases) #Summary statistics for linear fit. 
+
+cases.gdp <- function(x) { 
+                    owid.countries %>% 
+                    filter(continent == x) %>%
+                    ggplot(aes(x = gdp.cap, y = totcases.mil)) +
+                        geom_point(color = "#333aff") +
+                        geom_smooth(color = "red") +
+                        geom_smooth(method = "lm", color = "purple") +
+                        theme_bw() +
+                        labs(x = "GDP per Capita", y = "Total COVID-19 Cases per Million People") +
+                        labs(title = paste0("COVID-19 Cases per Million People in ", (continent = x), " vs. GDP per Capita"))
+} 
+for (i in c("North America", "Europe", "Asia", "Africa", "Oceania", "South America")) {
+  print(cases.gdp(i))
+} #Loops function for continents of interest. 
+```
+
+### GDP and COVID-19 Deaths per Million
+First, a linear regression is performed on world COVID-19 deaths and GDP. Scatter plots with a smooth line showing the relationship between GDP per capita and COVID-19 deaths per million people are the outputs of the function below: 
+```{r, eval = TRUE}
+ggplot(data = owid.countries, aes(x = gdp.cap, y = totdeaths.mil)) +
+  geom_point(color = "#333aff") +
+  geom_smooth(color = "red") +
+  geom_smooth(method = "lm", color = "purple") +
+  theme_bw() +
+  labs(x = "GDP per Capita", y = "Total COVID-19 Deaths per Million People") +
+  labs(title = paste0("World COVID-19 Deaths per Million People in vs. GDP per Capita")) #COVID-19 deaths and GDP per capita on world scale. Red line is smooth fit; purple line is linear fit. 
+cor(owid.countries$totdeaths.mil, owid.countries$gdp.cap, use = "complete.obs") 
+gdp.lm.deaths <- lm(totdeaths.mil ~ gdp.cap, data = owid.countries)
+gdp.lm.deaths
+summary.lm(gdp.lm.deaths) #Summary statistics for linear fit. 
+
+deaths.gdp <- function(x) { 
+                    owid.countries %>% 
+                    filter(continent == x) %>%
+                    ggplot(aes(x = gdp.cap, y = totdeaths.mil)) +
+                        geom_point(color = "#333aff") +
+                        geom_smooth(color = "red") +
+                        geom_smooth(method = "lm", color = "purple") +
+                        theme_bw() +
+                        labs(x = "GDP per Capita", y = "Total COVID-19 Deaths per Million People") +
+                        labs(title = paste0("COVID-19 Deaths per Million People in ", (continent = x), " vs. GDP per Capita"))
+} 
+for (i in c("North America", "Europe", "Asia", "Africa", "Oceania", "South America")) {
+  print(deaths.gdp(i))
+} #Loops function for continents of interest. 
+```
+
+## Median Age and COVID-19 Outcomes
+### Median Age and COVID-19 Cases per Million
+First, scatter plot shows all countries and the relationship between median age and COVID-19 outcomes. Next, median age is cut in two halves and converted to factors with labels "below.med" and "above.med". A bar plot shows COVID-19 cases per million for each country separated by continent, with fill color indicating whether the median population age is above or below the global median. 
+```{r, eval = TRUE}
+ggplot(data = owid.countries, aes(x = med.age, y = totcases.mil)) +
+  geom_point(color = "#333aff", alpha = 1) +
+  geom_smooth(color = "red") +
+  geom_smooth(method = "lm", color = "purple") +
+  theme_bw() +
+  labs(x = "Median Age", y = "Total COVID-19 Cases per Million People") +
+  labs(title = "World COVID-19 Cases per Million People vs. Median Population Age") #COVID-19 cases vs. median age on world scale. 
+cor(owid.countries$totcases.mil, owid.countries$med.age, use = "complete.obs")
+age.lm.cases <- lm(totcases.mil ~ med.age, data = owid.countries)
+age.lm.cases
+summary.lm(age.lm.cases) #Summary statistics for linear fit. 
+
+exp.model.cases <- lm(log(totcases.mil) ~ med.age, data = owid.countries)
+exp.model.cases
+summary.lm(exp.model.cases)
+
+summarise(owid.countries, med.age = mean(med.age, na.rm = TRUE)) #Mean of the median age of all countries.
+cases.med.age <- function(x) { 
+                    owid.countries %>%
+                    mutate(med.age = cut(med.age, breaks = c(0, 30.38, 48.3), labels = c("below.med", "above.med"))) %>%
+                    mutate(med.age <- as.factor(med.age)) %>%
+                    filter(continent == x) %>%
+                    ggplot(aes(x = location, y = totcases.mil, fill = factor(med.age))) +
+                        geom_bar(stat = "identity", position = "dodge") +
+                        theme_bw() +
+                        labs(x = "Country", y = "Total COVID-19 Cases per Million People") +
+                        scale_fill_brewer(palette = "Set1") +
+                        theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+                        labs(title = paste0("COVID-19 Cases per Million People by Country in ", (continent = x), " and Median Age"))
+} 
+for (i in c("North America", "Europe", "Asia", "Africa", "Oceania", "South America")) {
+  print(cases.med.age(i))
+} #Loops function for continents of interest.
+```
