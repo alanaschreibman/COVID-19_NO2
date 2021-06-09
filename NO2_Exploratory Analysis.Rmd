@@ -68,7 +68,7 @@ img <- filter$first()
 ee_print(img,clear=TRUE)
 
 Map$setCenter(65.27,24.11, zoom = 4)
-Map$addLayer(col1,visParams=list(bands = "NO2_column_number_density", min = 0,max = 10, palette = c("black", "blue", "purple", "cyan", "green", "yellow", "red")), "True Color Image")
+Map$addLayer(img,visParams=list(bands = "NO2_column_number_density", min = 0,max = 10, palette = c("black", "blue", "purple", "cyan", "green", "yellow", "red")), "True Color Image")
 ```
 
 
