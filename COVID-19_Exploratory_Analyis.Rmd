@@ -615,3 +615,130 @@ summary(lm(totcases.mil ~ fem.smokers, data = owid.countries))
 summary(lm(totcases.mil ~ male.smokers + gdp.cap, data = owid.countries)) #Male smokers with and without adjusting for GDP. 
 summary(lm(totcases.mil ~ male.smokers, data = owid.countries))
 ```
+
+## Diabetes Prevalence and COVID-19 Outcomes
+### Diabetes Prevalence and COVID-19 Cases per Million
+First, a linear regression is performed on world COVID-19 cases and diabetes prevalence. Then, scatter plots with a smooth line showing the relationship of diabetes prevalence and COVID-19 cases per million people are the outputs of the function below: 
+```{r, eval = TRUE}
+ggplot(data = owid.countries, aes(x = diab.prev, y = totcases.mil)) +
+  geom_point(color = "#333aff") +
+  geom_smooth(color = "red") +
+  geom_smooth(method = "lm", color = "purple") +
+  theme_bw() +
+  labs(x = "Diabetes Prevalence", y = "Total COVID-19 Cases per Million People") +
+  labs(title = paste0("World COVID-19 Cases per Million People in vs. Diabetes Prevalence")) #COVID-19 cases and diabetes prevalence on world scale. Red line is smooth fit; purple line is linear fit. 
+cor(owid.countries$totcases.mil, owid.countries$diab.prev, use = "complete.obs") 
+diab.lm.cases <- lm(totcases.mil ~ diab.prev, data = owid.countries)
+diab.lm.cases
+summary.lm(diab.lm.cases) #Summary statistics for linear fit. 
+
+cases.diab <- function(x) { 
+                    owid.countries %>% 
+                    filter(continent == x) %>%
+                    ggplot(aes(x = diab.prev, y = totcases.mil)) +
+                        geom_point(color = "#333aff") +
+                        geom_smooth(color = "red") +
+                        geom_smooth(method = "lm", color = "purple") +
+                        theme_bw() +
+                        labs(x = "Diabetes Prevalence", y = "Total COVID-19 Cases per Million People") +
+                        labs(title = paste0("COVID-19 Cases per Million People in ", (continent = x), " vs. Diabetes Prevalence"))
+} 
+for (i in c("North America", "Europe", "Asia", "Africa", "Oceania", "South America")) {
+  print(cases.diab(i))
+} #Loops function for continents of interest. 
+```
+
+### Diabetes Prevalence and COVID-19 Deaths per Million
+First, a linear regression is performed on world COVID-19 deaths and diabetes prevalence. Scatter plots with a smooth line showing the relationship of diabetes prevalence and COVID-19 deaths per million people are the outputs of the function below: 
+```{r, eval = TRUE}
+ggplot(data = owid.countries, aes(x = diab.prev, y = totdeaths.mil)) +
+  geom_point(color = "#333aff") +
+  geom_smooth(color = "red") +
+  geom_smooth(method = "lm", color = "purple") +
+  theme_bw() +
+  labs(x = "Diabetes Prevalence", y = "Total COVID-19 Deaths per Million People") +
+  labs(title = paste0("World COVID-19 Deaths per Million People in vs. Diabetes Prevalence")) #COVID-19 deaths and diabetes prevalence on world scale. Red line is smooth fit; purple line is linear fit. 
+cor(owid.countries$totdeaths.mil, owid.countries$diab.prev, use = "complete.obs") 
+diab.lm.deaths <- lm(totdeaths.mil ~ diab.prev, data = owid.countries)
+diab.lm.deaths
+summary.lm(diab.lm.deaths) #Summary statistics for linear fit. 
+
+deaths.diab <- function(x) { 
+                    owid.countries %>% 
+                    filter(continent == x) %>%
+                    ggplot(aes(x = diab.prev, y = totdeaths.mil)) +
+                        geom_point(color = "#333aff") +
+                        geom_smooth(color = "red") +
+                        geom_smooth(method = "lm", color = "purple") +
+                        theme_bw() +
+                        labs(x = "Diabetes Prevalence", y = "Total COVID-19 Deaths per Million People") +
+                        labs(title = paste0("COVID-19 Deaths per Million People in ", (continent = x), " vs. Diabetes Prevalence"))
+} 
+for (i in c("North America", "Europe", "Asia", "Africa", "Oceania", "South America")) {
+  print(deaths.diab(i))
+} #Loops function for continents of interest. 
+```
+
+## Cardiovascular Death and COVID-19 Outcomes
+### Cardiovascular Death and COVID-19 Cases per Million
+First, a linear regression is performed on world COVID-19 cases and cardiovascular death. Then, scatter plots with a smooth line showing the relationship between cardiovascular death and COVID-19 cases per million people are the outputs of the function below: 
+```{r, eval = TRUE}
+ggplot(data = owid.countries, aes(x = card.death, y = totcases.mil)) +
+  geom_point(color = "#333aff") +
+  geom_smooth(color = "red") +
+  geom_smooth(method = "lm", color = "purple") +
+  theme_bw() +
+  labs(x = "Cardiovascular Death", y = "Total COVID-19 Cases per Million People") +
+  labs(title = paste0("World COVID-19 Cases per Million People in vs. Cardiovascular Death")) #COVID-19 cases and cardiovascular death on world scale. Red line is smooth fit; purple line is linear fit. 
+cor(owid.countries$totcases.mil, owid.countries$card.death, use = "complete.obs") 
+card.lm.cases <- lm(totcases.mil ~ card.death, data = owid.countries)
+card.lm.cases
+summary.lm(card.lm.cases) #Summary statistics for linear fit. 
+
+cases.card <- function(x) { 
+                  owid.countries %>% 
+                    filter(continent == x) %>%
+                    ggplot(aes(x = card.death, y = totcases.mil)) +
+                        geom_point(color = "#333aff") +
+                        geom_smooth(color = "red") +
+                        geom_smooth(method = "lm", color = "purple") +
+                        theme_bw() +
+                        labs(x = "Cardiovascular Death", y = "Total COVID-19 Cases per Million People") +
+                        labs(title = paste0("COVID-19 Cases per Million People in ", (continent = x), " vs. Cardiovascular Death"))
+} 
+for (i in c("North America", "Europe", "Asia", "Africa", "Oceania", "South America")) {
+  print(cases.card(i))
+} #Loops function for continents of interest. 
+```
+
+### Cardiovascular Death and COVID-19 Deaths per Million
+First, a linear regression is performed on world COVID-19 deaths and cardiovascular death rates from 2017. Scatter plots with a smooth line showing the relationship between cardiovascular death rates and COVID-19 deaths per million people are the outputs of the function below: 
+```{r, eval = TRUE}
+ggplot(data = owid.countries, aes(x = card.death, y = totdeaths.mil)) +
+  geom_point(color = "#333aff") +
+  geom_smooth(color = "red") +
+  geom_smooth(method = "lm", color = "purple") +
+  theme_bw() +
+  labs(x = "Cardiovascular Death", y = "Total COVID-19 Deaths per Million People") +
+  labs(title = paste0("World COVID-19 Deaths per Million People in vs. Cardiovascular Death")) #COVID-19 deaths and cardiovascular death on world scale. Red line is smooth fit; purple line is linear fit. 
+cor(owid.countries$totdeaths.mil, owid.countries$card.death, use = "complete.obs") 
+card.lm.deaths <- lm(totdeaths.mil ~ card.death, data = owid.countries)
+card.lm.deaths
+summary.lm(card.lm.deaths) #Summary statistics for linear fit. 
+
+deaths.card <- function(x) { 
+                    owid.countries %>% 
+                    filter(continent == x) %>%
+                    ggplot(aes(x = card.death, y = totdeaths.mil)) +
+                        geom_point(color = "#333aff") +
+                        geom_smooth(color = "red") +
+                        geom_smooth(method = "lm", color = "purple") +
+                        theme_bw() +
+                        labs(x = "Cardiovascular Death", y = "Total COVID-19 Deaths per Million People") +
+                        labs(title = paste0("COVID-19 Deaths per Million People in ", (continent = x), " vs. Cardiovascular Death"))
+} 
+for (i in c("North America", "Europe", "Asia", "Africa", "Oceania", "South America")) {
+  print(deaths.card(i))
+} #Loops function for continents of interest. 
+```
+
