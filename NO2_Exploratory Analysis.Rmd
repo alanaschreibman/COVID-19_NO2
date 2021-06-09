@@ -1,0 +1,43 @@
+---
+title: "NO2 Exploratory Analysis"
+author: "Alana Schreibman"
+date: "6/9/2021"
+output: 
+  html_document:
+    toc: true
+    toc_float: 
+        collapsed: true
+        smooth_scroll: true
+    depth: 3 
+    theme: cosmo
+    highlight: pygments
+---
+
+```{r global options, include = FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+```
+
+``` {r, eval = FALSE}
+library(raster)
+library(sp)
+library(rgdal)
+library(ggplot2)
+library(dplyr)
+```
+
+``` {r, eval = FALSE}
+install.packages("reticulate")
+install.packages("R6")
+install.packages("processx")
+install.packages("rgee")
+library(rgee)
+ee_install(py_env = "rgee")
+rgee::ee_install()
+ee_Initialize()
+rgee::ee_clean_pyenv()
+rgee::ee_install_set_pyenv(py_path = "/Users/alanaschreibman/.virtualenvs/rgee/bin/python")
+ee_install()
+ee_Initialize()
+library(text)
+```
+
