@@ -1,0 +1,61 @@
+---
+title: "COVID-19 Outcomes"
+author: "Alana Schreibman"
+date: "5/27/2021"
+output: 
+  html_document:
+    toc: true
+    toc_float: 
+        collapsed: true
+        smooth_scroll: true
+    depth: 3 
+    theme: cosmo
+    highlight: pygments
+---
+
+```{r global options, include = FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+```
+
+***
+
+The purpose of this file is to practice applying basic R commands learned through lecture videos and perform exploratory analysis on worldwide COVID-19 data. 
+
+```{r, eval = TRUE}
+library(dplyr)
+library(lubridate)
+library(knitr)
+library(ggplot2)
+library(cowplot)
+```
+
+### Our World in Data GitHub COVID-19 outcomes
+Data was read in and summarized as shown below: (current file is as of 5/31)
+```{r, eval = TRUE}
+owid <- read.csv(url("https://raw.githubusercontent.com/owid/covid-19-data/master/public/data/owid-covid-data.csv"), na.strings = c("", "NA"), colClasses = c("date" = "Date"), header = TRUE)
+dim(owid)
+```
+
+
+```{r, eval = FALSE}
+head(owid)
+str(owid)
+summary(owid)
+```
+
+#### Full Cleaned Data Set
+Data set, including possible confounders for use in later analysis, is cleaned and filtered below. 
+```{r, eval = TRUE}
+owid.filtered <- owid %>%
+                  rename(iso.code = iso_code, totcases = total_cases, totdeaths = total_deaths, totcases.mil = total_cases_per_million, totdeaths.mil = total_deaths_per_million, pop.density = population_density, med.age = median_age, older70 = aged_70_older, gdp.cap = gdp_per_capita, card.death = cardiovasc_death_rate, diab.prev = diabetes_prevalence, fem.smokers = female_smokers, male.smokers = male_smokers) %>%
+                  select(c(iso.code:totcases, totdeaths, totcases.mil, totdeaths.mil, population, pop.density, med.age, older70, gdp.cap, card.death, diab.prev, fem.smokers, male.smokers)) %>% #Renamed variables and filtered to keep only those of interest. 
+                  filter(date == "2020-05-31") #Filtered out all but most recent date (most recent date is a running sum of total cases).
+table(owid.filtered$continent, useNA = "ifany") #Data includes both continent and country-specific outcomes. Continent outcomes can be distinguished by "NA" in the continent column; the continent name is in the location column. 
+```
+
+More exploratory analysis of data frames:
+```{r, eval = FALSE}
+dim(owid.filtered)
+head(owid.filtered)
+tail(owid.filtered)
+```
