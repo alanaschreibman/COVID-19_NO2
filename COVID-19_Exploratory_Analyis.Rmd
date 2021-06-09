@@ -103,3 +103,102 @@ select(owid.countries, c(iso.code:totcases, totcases.mil)) #COVID-19 cases by co
 select(owid.countries, c(iso.code:date, totdeaths, totdeaths.mil)) #COVID-19 deaths by country. 
 select(owid.countries, c(iso.code:date, hosp.patients, hosp.patients.mil)) #COVID-19 hospitalizations by country.  
 ```
+
+## Case Count Plots
+### Continent COVID-19 Plots
+Plots for exploratory analysis comparing COVID-19 cases by continent for total cases, total cases per million people, total deaths, and total deaths per million people.
+```{r, eval = TRUE}
+continents1 <- owid.continents %>%
+                  filter(!(location %in% c("International", "World"))) %>%
+                  ggplot(aes(x = location, y = totcases)) +
+                  geom_bar(stat="identity") +
+                  geom_text(aes(label = totcases), vjust = -0.25, size = 3) + 
+                  labs(title = "Total COVID-19 Cases by Continent") +
+                  labs(x = "Continent", y = "Total COVID-19 Cases") +
+                  theme(axis.text.x = element_text(angle = 45, hjust = 1)) #Barplot of total cases by continent. 
+
+continents2 <- owid.continents %>%
+                  filter(!(location %in% c("International", "World"))) %>%
+                  ggplot(aes(x = location, y = totcases.mil)) +
+                  geom_bar(stat="identity") + 
+                  geom_text(aes(label = totcases.mil), vjust = -0.25, size = 3) + 
+                  labs(title = "Total COVID-19 Cases per Million People by Continent") +
+                  labs(x = "Continent", y = "Total COVID-19 Cases per Million") +
+                  theme(axis.text.x = element_text(angle = 45, hjust = 1)) #Barplot of total cases per million by continent.
+
+plot_grid(continents1, continents2, labels = "AUTO")
+
+continents3 <- owid.continents %>%
+                    filter(!(location %in% c("International", "World"))) %>%
+                    ggplot(aes(x = location, y = totdeaths)) +
+                    geom_bar(stat="identity") +
+                    geom_text(aes(label = totdeaths), vjust = -0.25, size = 3) + 
+                    labs(title = "Total COVID-19 Deaths by Continent") +
+                    labs(x = "Continent", y = "Total COVID-19 Cases") +
+                    theme(axis.text.x = element_text(angle = 45, hjust = 1)) #Barplot of total deaths by continent. 
+
+continents4 <- owid.continents %>%
+                    filter(!(location %in% c("International", "World"))) %>%
+                    ggplot(aes(x = location, y = totdeaths.mil)) +
+                    geom_bar(stat="identity") +
+                    geom_text(aes(label = totdeaths.mil), vjust = -0.25, size = 3) + 
+                    labs(title = "Total COVID-19 Deaths per Million by Continent") +
+                    labs(x = "Continent", y = "Total COVID-19 Cases") +
+                    theme(axis.text.x = element_text(angle = 45, hjust = 1)) #Barplot of total deaths per million by continent.
+
+plot_grid(continents3, continents4, labels = "AUTO")
+```
+
+### Top 10 Country COVID-19 Plots
+Barplots filtering out the 10 countries with the highest COVID-19 cases per million people on each continent, as well as a heatmap of all countries, are the outputs of the code below: 
+```{r, eval = TRUE}
+ctry.mean.cases <- owid.countries %>%
+    group_by(continent) %>%
+    summarise(totcases.mil = mean(totcases.mil, na.rm = TRUE)) #Mean COVID-19 cases per country, grouped by continent.
+mean.cases <- function(x) {
+                      ctry.mean.cases %>%
+                      filter(continent == x) %>%
+                      select(totcases.mil) %>%
+                      as.numeric()
+} #Function to produce numeric value of mean COVID-19 cases per country by continent to be used in bar graphs below. 
+top.ctry.cases <- function(x) { 
+                    owid.countries %>% 
+                    filter(continent == x) %>%
+                    arrange(desc(totcases.mil)) %>%
+                    head(n=10) %>%
+                    ggplot(aes(x = location, y = totcases.mil)) +
+                        geom_bar(stat = "identity") +
+                        geom_abline(slope=0, intercept= mean.cases(x),  col = "red", lty=2) +
+                        labs(x = "Country", y = "Total COVID-19 Cases per Million People") +
+                        theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+                        labs(title = paste0("COVID-19 Cases per Million People in ", (continent = x)))
+}
+for (i in c("North America", "Europe", "Asia", "Africa", "Oceania", "South America")) {
+  print(top.ctry.cases(i))
+} #Loops function for continents of interest. 
+
+ctry.mean.deaths <- owid.countries %>%
+    group_by(continent) %>%
+    summarise(totdeaths.mil = mean(totdeaths.mil, na.rm = TRUE)) #Mean COVID-19 daeths per country, grouped by continent.
+mean.deaths <- function(x) {
+                      ctry.mean.deaths %>%
+                      filter(continent == x) %>%
+                      select(totdeaths.mil) %>%
+                      as.numeric()
+} #Function to produce numeric value of mean COVID-19 deaths per country by continent to be used in bar graphs below. 
+top.ctry.deaths <- function(x) { 
+                    owid.countries %>% 
+                    filter(continent == x) %>%
+                    arrange(desc(totdeaths.mil)) %>%
+                    head(n=10) %>%
+                    ggplot(aes(x = location, y = totdeaths.mil)) +
+                        geom_bar(stat = "identity") +
+                        geom_abline(slope=0, intercept= mean.deaths(x),  col = "red", lty=2) +
+                        labs(x = "Country", y = "Total COVID-19 Deaths per Million People") +
+                        theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+                        labs(title = paste0("COVID-19 Deaths per Million People in ", (continent = x)))
+}
+for (i in c("North America", "Europe", "Asia", "Africa", "Oceania", "South America")) {
+  print(top.ctry.deaths(i))
+} #Loops function for continents of interest. 
+```
