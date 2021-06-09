@@ -474,3 +474,144 @@ for (i in c("North America", "Europe", "Asia", "Africa", "Oceania", "South Ameri
   print(cases.med.age(i))
 } #Loops function for continents of interest.
 ```
+
+### Median Age and COVID-19 Deaths per Million
+First, scatter plot shows all countries and the relationship between median age and COVID-19 deaths. Next, median age is cut in two halves and converted to factors with labels "below.med" and "above.med". A bar plot shows COVID-19 daeths per million for each country separated by continent, with fill color indicating whether the median population age is above or below the global median. 
+```{r, eval = TRUE}
+ggplot(data = owid.countries, aes(x = med.age, y = totdeaths.mil)) +
+  geom_point(color = "#333aff", alpha = 1) +
+  geom_smooth(color = "red") +
+  geom_smooth(method = "lm", color = "purple") +
+  theme_bw() +
+  labs(x = "Median Age", y = "Total COVID-19 Deaths per Million People") +
+  labs(title = "World COVID-19 Deaths per Million People vs. Median Population Age") #COVID-19 deaths vs. median age on world scale. 
+cor(owid.countries$totdeaths.mil, owid.countries$med.age, use = "complete.obs")
+age.lm.deaths <- lm(totdeaths.mil ~ med.age, data = owid.countries)
+age.lm.deaths
+summary.lm(age.lm.deaths) #Summary statistics for linear fit. 
+
+exp.model.deaths <- lm(log(totdeaths.mil) ~ med.age, data = owid.countries)
+exp.model.deaths
+summary.lm(exp.model.deaths)
+
+summarise(owid.countries, med.age = mean(med.age, na.rm = TRUE)) #Mean of the median age of all countries.
+deaths.med.age <- function(x) { 
+                    owid.countries %>%
+                    mutate(med.age = cut(med.age, breaks = c(0, 30.38, 48.3), labels = c("below.med", "above.med"))) %>%
+                    mutate(med.age <- as.factor(med.age)) %>%
+                    filter(continent == x) %>%
+                    ggplot(aes(x = location, y = totdeaths.mil, fill = factor(med.age))) +
+                        geom_bar(stat = "identity", position = "dodge") +
+                        theme_bw() +
+                        labs(x = "Country", y = "Total COVID-19 Deaths per Million People") +
+                        scale_fill_brewer(palette = "Set1") +
+                        theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+                        labs(title = paste0("COVID-19 Deaths per Million People by Country in ", (continent = x), " and Median Age"))
+} 
+for (i in c("North America", "Europe", "Asia", "Africa", "Oceania", "South America")) {
+  print(deaths.med.age(i))
+} #Loops function for continents of interest.
+```
+
+## Smoking and COVID-19 Outcomes
+### Smoking and COVID-19 Cases per Million 
+Graphs below show percentages of female and male smokers by country and the correlation to COVID-19 cases. 
+```{r, eval = TRUE}
+ggplot(data = owid.countries, aes(x = fem.smokers, y = totcases.mil)) +
+  geom_point(color = "#333aff", alpha = 1) +
+  geom_smooth(color = "red") +
+  theme_bw() +
+  labs(x = "Percentage of Female Smokers by Country", y = "Total COVID-19 Cases per Million People") +
+  labs(title = "World COVID-19 Cases per Million People vs. Percentage of Female Smokers") #COVID-19 cases vs. female smokers on world scale. 
+cor(owid.countries$totcases.mil, owid.countries$fem.smokers, use = "complete.obs") 
+
+ggplot(data = owid.countries, aes(x = male.smokers, y = totcases.mil)) +
+  geom_point(color = "#333aff", alpha = 1) +
+  geom_smooth(color = "red") +
+  theme_bw() +
+  labs(x = "Percentage of Male Smokers by Country", y = "Total COVID-19 Cases per Million People") +
+  labs(title = "World COVID-19 Cases per Million People vs. Percentage of Male Smokers") #COVID-19 cases vs. male smokers on world scale. 
+cor(owid.countries$totcases.mil, owid.countries$male.smokers, use = "complete.obs") 
+
+cases.smoking.f <- function(x) {
+                    owid.countries %>%
+                    filter(continent == x) %>%
+                    ggplot(aes(x = fem.smokers, y = totcases.mil)) +
+                      geom_point(color = "#333aff", alpha = 1) +
+                      geom_smooth(color = "red") +
+                      theme_bw() +
+                      labs(x = "Percentage of Female Smokers in Country", y = "Total COVID-19 Cases per Million People") +
+                      labs(title = paste0("COVID-19 Cases per Million People in ", (continent = x), " vs. Percentage of Female Smokers"))
+}
+for (i in c("North America", "Europe", "Asia", "Africa", "Oceania", "South America")) {
+  print(cases.smoking.f(i)) #Apply function to each continent. 
+}
+
+cases.smoking.m <- function(x) {
+                    owid.countries %>%
+                    filter(continent == x) %>%
+                    ggplot(aes(x = male.smokers, y = totcases.mil)) +
+                      geom_point(color = "#333aff", alpha = 1) +
+                      geom_smooth(color = "red") +
+                      theme_bw() +
+                      labs(x = "Percentage of Male Smokers in Country", y = "Total COVID-19 Cases per Million People") +
+                      labs(title = paste0("COVID-19 Cases per Million People in ", (continent = x), " vs. Percentage of Male Smokers"))
+}
+for (i in c("North America", "Europe", "Asia", "Africa", "Oceania", "South America")) {
+  print(cases.smoking.m(i)) #Apply function to each continent. 
+}
+```
+
+### Smoking and COVID-19 Deaths per Million 
+Graphs below show percentages of female and male smokers in the world and by country and the correlation to COVID-19 deaths. 
+```{r, eval = TRUE}
+ggplot(data = owid.countries, aes(x = fem.smokers, y = totdeaths.mil)) +
+  geom_point(color = "#333aff", alpha = 1) +
+  geom_smooth(color = "red") +
+  theme_bw() +
+  labs(x = "Percentage of Female Smokers by Country", y = "Total COVID-19 Deaths per Million People") +
+  labs(title = "World COVID-19 Deaths per Million People vs. Percentage of Female Smokers") #COVID-19 deaths vs. female smokers on world scale. 
+cor(owid.countries$totdeaths.mil, owid.countries$fem.smokers, use = "complete.obs") 
+
+ggplot(data = owid.countries, aes(x = male.smokers, y = totdeaths.mil)) +
+  geom_point(color = "#333aff", alpha = 1) +
+  geom_smooth(color = "red") +
+  theme_bw() +
+  labs(x = "Percentage of Male Smokers by Country", y = "Total COVID-19 Deaths per Million People") +
+  labs(title = "World COVID-19 Deaths per Million People vs. Percentage of Male Smokers") #COVID-19 deaths vs. male smokers on world scale. 
+cor(owid.countries$totdeaths.mil, owid.countries$male.smokers, use = "complete.obs") 
+
+deaths.smoking.f <- function(x) {
+                    owid.countries %>%
+                    filter(continent == x) %>%
+                    ggplot(aes(x = fem.smokers, y = totdeaths.mil)) +
+                      geom_point(color = "#333aff", alpha = 1) +
+                      geom_smooth(color = "red") +
+                      theme_bw() +
+                      labs(x = "Percentage of Female Smokers in Country", y = "Total COVID-19 Deaths per Million People") +
+                      labs(title = paste0("COVID-19 Deaths per Million People in ", (continent = x), " vs. Percentage of Female Smokers"))
+}
+for (i in c("North America", "Europe", "Asia", "Africa", "Oceania", "South America")) {
+  print(deaths.smoking.f(i)) #Apply function to each continent. 
+}
+
+deaths.smoking.m <- function(x) {
+                    owid.countries %>%
+                    filter(continent == x) %>%
+                    ggplot(aes(x = male.smokers, y = totdeaths.mil)) +
+                      geom_point(color = "#333aff", alpha = 1) +
+                      geom_smooth(color = "red") +
+                      theme_bw() +
+                      labs(x = "Percentage of Male Smokers in Country", y = "Total COVID-19 Deaths per Million People") +
+                      labs(title = paste0("COVID-19 Deaths per Million People in ", (continent = x), " vs. Percentage of Male Smokers"))
+}
+for (i in c("North America", "Europe", "Asia", "Africa", "Oceania", "South America")) {
+  print(deaths.smoking.m(i)) #Apply function to each continent. 
+}
+
+#Smoking likely not significant: when adjusting for GDP, statistical significance actually goes down. Same occurs when applied code to total deaths (code not shown).
+summary(lm(totcases.mil ~ fem.smokers + gdp.cap, data = owid.countries)) #Female smokers with and without ajdusting for GDP. 
+summary(lm(totcases.mil ~ fem.smokers, data = owid.countries))
+summary(lm(totcases.mil ~ male.smokers + gdp.cap, data = owid.countries)) #Male smokers with and without adjusting for GDP. 
+summary(lm(totcases.mil ~ male.smokers, data = owid.countries))
+```
