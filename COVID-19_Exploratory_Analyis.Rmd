@@ -202,3 +202,173 @@ for (i in c("North America", "Europe", "Asia", "Africa", "Oceania", "South Ameri
   print(top.ctry.deaths(i))
 } #Loops function for continents of interest. 
 ```
+
+### Heatmaps of COVID-19 Cases Over Time, All Countries
+```{r, eval = TRUE, fig.width = 25, fig.height = 35}
+owid %>%
+  rename(iso.code = iso_code, totcases.mil = total_cases_per_million) %>%
+  select(c(iso.code:date, totcases.mil)) %>%
+  filter(!is.na(continent)) %>%
+  ggplot(aes(x = date, y = location, fill = totcases.mil)) +
+    geom_tile() +
+    labs(title = "Total COVID-19 Cases per Million Over Time", size = 22) +
+    scale_x_date(date_breaks = "1 month") +
+    scale_fill_gradient(low = "#ffeda0", high = "#f03b20") +
+    ggsave(file = "test.image.pdf", width = 20, height = 25) #Total cases per million over time by country as heatmap. 
+
+owid %>%
+  rename(iso.code = iso_code, new.cases = new_cases) %>%
+  select(c(iso.code:date, new.cases)) %>%
+  filter(!is.na(continent)) %>%
+  ggplot(aes(x = date, y = location, fill = new.cases)) +
+    geom_tile() +
+    labs(title = "New COVID-19 Cases per Million Over Time", size = 22) +
+    scale_x_date(date_breaks = "1 month") +
+    scale_fill_gradient(low = "#ffeda0", high = "#f03b20", limits = c(0, 20000)) +
+    ggsave(file = "test.image2.pdf", width = 20, height = 25) #New cases per million over time by country as heatmap. Difficult to scale because range is so large.  
+```
+
+## Population Size and COVID-19 Outcomes
+### Population Size and COVID-19 Cases per Million
+Population size and population density are evaluated below as confounding variables for COVID-19 cases. These variables are first analyzed on a full-world scale, and then by continent. 
+```{r, eval = TRUE}
+ggplot(data = owid.countries, aes(x = population, y = totcases.mil)) +
+  geom_point(color = "#333aff") +
+  geom_smooth(color = "red") +
+  geom_smooth(method = "lm", color = "purple") +
+  theme_bw() +
+  labs(x = "Population Size", y = "Total COVID-19 Cases per Million People") +
+  labs(title = ("World COVID-19 Cases per Million People vs. Population Size")) #COVID-19 cases and population size on world scale. Red line is smooth fit; purple line is linear fit. 
+cor(owid.countries$totcases.mil, owid.countries$population, use = "complete.obs") 
+pop.lm.cases <- lm(totcases.mil ~ population, data = owid.countries)
+pop.lm.cases
+summary.lm(pop.lm.cases) #Summary statistics for linear fit. Not a significant relationship. 
+
+ggplot(data = owid.countries, aes(x = pop.density, y = totcases.mil)) +
+  geom_point(color = "#333aff") +
+  geom_smooth(color = "red") +
+  geom_smooth(method = "lm", color = "purple") +
+  theme_bw() +
+  labs(x = "Population Density", y = "Total COVID-19 Cases per Million People") +
+  labs(title = ("World COVID-19 Cases per Million People vs. Population Density")) #COVID-19 cases and population size on world scale. Red line is smooth fit; purple line is linear fit. 
+cor(owid.countries$totcases.mil, owid.countries$pop.density, use = "complete.obs") 
+pop.den.lm.cases <- lm(totcases.mil ~ pop.density, data = owid.countries)
+pop.den.lm.cases
+summary.lm(pop.den.lm.cases) #Summary statistics for linear fit. Not a significant relationship. 
+
+cases.pop <- function(x) { 
+                    owid.countries %>% 
+                    filter(continent == x) %>%
+                    ggplot(aes(x = population, y = totcases.mil)) +
+                        geom_point(color = "#333aff") +
+                        geom_smooth(color = "red") +
+                        geom_smooth(method = "lm", color = "purple") +
+                        theme_bw() +
+                        labs(x = "Population Size", y = "Total COVID-19 Cases per Million People") +
+                        labs(title = paste0("COVID-19 Cases per Million People in ", (continent = x), " vs. Population Size"))
+} 
+pop.lm.cases.cont <- function(x) {
+                        owid.countries %>%
+                        filter(continent == x) %>%
+                        lm(totcases.mil ~ population,.) %>%
+                        summary.lm() #Function for linear regression statistics to be included in for loop below. 
+}
+for (i in c("North America", "Europe", "Asia", "Africa", "Oceania", "South America")) {
+   print(cases.pop(i)) 
+   print(pop.lm.cases.cont(i)) 
+} #Loops function for continents of interest. 
+
+cases.pop.den <- function(x) { 
+                    owid.countries %>% 
+                    filter(continent == x) %>%
+                    ggplot(aes(x = pop.density, y = totcases.mil)) +
+                        geom_point(color = "#333aff") +
+                        geom_smooth(color = "red") +
+                        geom_smooth(method = "lm", color = "purple") +
+                        theme_bw() +
+                        labs(x = "Population Density", y = "Total COVID-19 Cases per Million People") +
+                        labs(title = paste0("COVID-19 Cases per Million People in ", (continent = x), " vs. Population Density"))
+} 
+pop.den.lm.cases.cont <- function(x) {
+                        owid.countries %>%
+                        filter(continent == x) %>%
+                        lm(totcases.mil ~ pop.density,.) %>%
+                        summary.lm() #Function for linear regression statistics to be included in for loop below. 
+}
+for (i in c("North America", "Europe", "Asia", "Africa", "Oceania", "South America")) {
+  print(cases.pop.den(i))
+  print(pop.den.lm.cases.cont(i))
+} #Loops function for continents of interest. 
+```
+
+### Population Size and COVID-19 Deaths per Million
+Population size and population density are evaluated below as confounding variables for COVID-19 deaths. These variables are first analyzed on a full-world scale, and then by continent. 
+```{r, eval = TRUE}
+ggplot(data = owid.countries, aes(x = population, y = totdeaths.mil)) +
+  geom_point(color = "#333aff") +
+  geom_smooth(color = "red") +
+  geom_smooth(method = "lm", color = "purple") +
+  theme_bw() +
+  labs(x = "Population Size", y = "Total COVID-19 Deaths per Million People") +
+  labs(title = ("World COVID-19 Deaths per Million People vs. Population Size")) #COVID-19 deaths and population size on world scale. Red line is smooth fit; purple line is linear fit. 
+cor(owid.countries$totdeaths.mil, owid.countries$population, use = "complete.obs") 
+pop.lm.deaths <- lm(totdeaths.mil ~ population, data = owid.countries)
+pop.lm.deaths
+summary.lm(pop.lm.deaths) #Summary statistics for linear fit. Not a significant relationship. 
+
+ggplot(data = owid.countries, aes(x = pop.density, y = totdeaths.mil)) +
+  geom_point(color = "#333aff") +
+  geom_smooth(color = "red") +
+  geom_smooth(method = "lm", color = "purple") +
+  theme_bw() +
+  labs(x = "Population Density", y = "Total COVID-19 Deaths per Million People") +
+  labs(title = ("World COVID-19 Deaths per Million People vs. Population Density")) #COVID-19 deaths and population size on world scale. Red line is smooth fit; purple line is linear fit. 
+cor(owid.countries$totdeaths.mil, owid.countries$pop.density, use = "complete.obs") 
+pop.den.lm.deaths <- lm(totdeaths.mil ~ pop.density, data = owid.countries)
+pop.den.lm.deaths
+summary.lm(pop.den.lm.deaths) #Summary statistics for linear fit. Not a significant relationship. 
+
+deaths.pop <- function(x) { 
+                    owid.countries %>% 
+                    filter(continent == x) %>%
+                    ggplot(aes(x = population, y = totdeaths.mil)) +
+                        geom_point(color = "#333aff") +
+                        geom_smooth(color = "red") +
+                        geom_smooth(method = "lm", color = "purple") +
+                        theme_bw() +
+                        labs(x = "Population Size", y = "Total COVID-19 Deaths per Million People") +
+                        labs(title = paste0("COVID-19 Deaths per Million People in ", (continent = x), " vs. Population Size"))
+} 
+pop.lm.deaths.cont <- function(x) {
+                        owid.countries %>%
+                        filter(continent == x) %>%
+                        lm(totdeaths.mil ~ population,.) %>%
+                        summary.lm() #Function for linear regression statistics to be included in for loop below. 
+}
+for (i in c("North America", "Europe", "Asia", "Africa", "Oceania", "South America")) {
+  print(deaths.pop(i))
+  print(pop.lm.deaths.cont(i))
+} #Loops function for continents of interest. 
+
+deaths.pop.den <- function(x) { 
+                    owid.countries %>% 
+                    filter(continent == x) %>%
+                    ggplot(aes(x = pop.density, y = totdeaths.mil)) +
+                        geom_point(color = "#333aff") +
+                        geom_smooth(color = "red") +
+                        geom_smooth(method = "lm", color = "purple") +
+                        theme_bw() +
+                        labs(x = "Population Density", y = "Total COVID-19 Deaths per Million People") +
+                        labs(title = paste0("COVID-19 Deaths per Million People in ", (continent = x), " vs. Population Density"))
+} 
+pop.den.lm.cases.cont <- function(x) {
+                        owid.countries %>%
+                        filter(continent == x) %>%
+                        lm(totdeaths.mil ~ pop.density,.) %>%
+                        summary.lm() #Function for linear regression statistics to be included in for loop below. 
+}
+for (i in c("North America", "Europe", "Asia", "Africa", "Oceania", "South America")) {
+  print(deaths.pop.den(i))
+  print(pop.den.lm.cases.cont(i))
+} #Loops function for continents of interest.
+```
