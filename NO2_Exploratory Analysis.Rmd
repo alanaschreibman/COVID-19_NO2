@@ -25,19 +25,50 @@ library(ggplot2)
 library(dplyr)
 ```
 
+#Earth Engine API setup. 
 ``` {r, eval = FALSE}
 install.packages("reticulate")
 install.packages("R6")
 install.packages("processx")
 install.packages("rgee")
+install.packages("geojsonio")
 library(rgee)
+library(reticulate)
 ee_install(py_env = "rgee")
-rgee::ee_install()
-ee_Initialize()
-rgee::ee_clean_pyenv()
-rgee::ee_install_set_pyenv(py_path = "/Users/alanaschreibman/.virtualenvs/rgee/bin/python")
 ee_install()
 ee_Initialize()
-library(text)
+ee_install_upgrade()
+py_install("geemap")
+gm <- import("geemap")
+install_github("r-spatial/rgee")
 ```
+
+#Load other libraries needed.  
+```{r, eval = TRUE }
+library(tidyverse)
+library(rgee)
+library(sf)
+library(mapview)
+install.packages('remotes')
+library(remotes)
+```
+
+#Experimenting with Earth Engine.
+```{r, eval = TRUE}
+ee_Initialize()
+
+# Selecting a ee$ImageCollection
+col<-ee$ImageCollection('COPERNICUS/S5P/NRTI/L3_NO2')
+start <- ee$Date("2020-03-26")
+end <- ee$Date("2021-06-07")
+filter<-col$filterDate(start,end)
+#Getting the first filtered image
+# ee$ImageCollection to ee$Image
+img <- filter$first()
+ee_print(img,clear=TRUE)
+
+Map$setCenter(65.27,24.11, zoom = 4)
+Map$addLayer(col1,visParams=list(bands = "NO2_column_number_density", min = 0,max = 10, palette = c("black", "blue", "purple", "cyan", "green", "yellow", "red")), "True Color Image")
+```
+
 
