@@ -17,12 +17,15 @@ output:
 knitr::opts_chunk$set(warning = FALSE, message = FALSE)
 ```
 
+#Load libraries needed.  
 ``` {r, eval = FALSE}
 library(raster)
-library(sp)
+library(sf)
 library(rgdal)
 library(ggplot2)
+library(tidyr)
 library(dplyr)
+library(tidyverse)
 ```
 
 #Earth Engine API setup. 
@@ -32,32 +35,25 @@ install.packages("R6")
 install.packages("processx")
 install.packages("rgee")
 install.packages("geojsonio")
-library(rgee)
+library(mapview)
+library(remotes)
 library(reticulate)
+library(rgee)
+install_github("r-spatial/rgee")
 ee_install(py_env = "rgee")
 ee_install()
 ee_Initialize()
 ee_install_upgrade()
 py_install("geemap")
 gm <- import("geemap")
-install_github("r-spatial/rgee")
 ```
 
-#Load other libraries needed.  
-```{r, eval = TRUE }
-library(tidyverse)
-library(rgee)
-library(sf)
-library(mapview)
-install.packages('remotes')
-library(remotes)
-```
 
 #Experimenting with Earth Engine.
 ```{r, eval = TRUE}
 ee_Initialize()
 
-# Selecting a ee$ImageCollection
+# Selecting a ee$ImageCollection. Problem: map seems to be only displaying a small portion of world data; unsure why. 
 col<-ee$ImageCollection('COPERNICUS/S5P/NRTI/L3_NO2')
 start <- ee$Date("2020-03-26")
 end <- ee$Date("2021-06-07")
@@ -69,6 +65,69 @@ ee_print(img,clear=TRUE)
 
 Map$setCenter(65.27,24.11, zoom = 4)
 Map$addLayer(img,visParams=list(bands = "NO2_column_number_density", min = 0,max = 10, palette = c("black", "blue", "purple", "cyan", "green", "yellow", "red")), "True Color Image")
+```
+
+```{r, eval = TRUE}
+#Can't figure out the problem here: seems like map generated is empty.
+blocks <- ee$ImageCollection("COPERNICUS/S5P/NRTI/L3_NO2")
+start <- ee$Date("2019-07-11")
+end <- ee$Date("2019-07-20")
+subset <- blocks$filterDate(start,end)
+image <- subset$first()
+image
+sf_subset <- ee_as_sf(x = image)
+no2viz <- list(
+        min = 0,
+        max = .0002,
+        bands = "NO2_column_number_density",
+        palette = c("black", "blue", "purple", "cyan", "green", "yellow", "red")
+)
+Map$addLayer(image, no2viz,'NO2')
+```
+
+```{r, eval = TRUE}
+#Attempt to download and use raster commands. Commands seem to work; problem is that only small regions can be downloaded at a time. 
+#loading the image to be downloaded
+image1 <- ee$ImageCollection("COPERNICUS/S5P/NRTI/L3_NO2")$filterDate('2020-01-01', '2020-04-01')$select("NO2_column_number_density")$median()
+geom_params <- list(
+ scale = 30,
+ crs = 'EPSG:4326',
+ region = '[[-44.15, -18.25], [-44.35, -18.25], [-44.35, -18.35],
+[-44.15, -18.35]]'
+)
+path <- image1$getDownloadUrl(geom_params)
+print(path)
+
+thermal <- stack('download.NO2_column_number_density.tif')
+plotRGB(thermal,stretch='lin')
+visible<-stack('download.NO2_column_number_density.tif')
+plotRGB(visible,stretch='lin')
+
+fn <- "download.NO2_column_number_density.tif"
+r1 <- raster(fn)
+plot(r1, col = terrain.colors(4))
+```
+
+```{r, eval = TRUE}
+# Filter the dataset by dates, reproject and select only the band "NO2_column_number_density". Get a time series plot of NO2 values. 
+#Problem here: "request payload size exceeds the limit: 10485760 bytes" error message. 
+NO2 <- ee$ImageCollection("COPERNICUS/S5P/NRTI/L3_NO2")$
+  filterDate("2019-04-01","2020-04-01")$
+  map(function(x) x$reproject("EPSG:4326")$select("NO2_column_number_density"))
+world.sf <- st_read("world_maps/country_gen_trim.shp")  # Read shapefile as an sf object
+world.geo <- st_geometry(world.sf)
+
+ee__NO2 <- ee_extract(NO2, world.geo, sf = FALSE)
+colnames(ee_NO2) <- sprintf("%02d", 1:12)
+ee_NO2$name <- nc$NAME
+
+ee_NO2 %>%
+  pivot_longer(-name, names_to = "month",values_to = "NO2_column_number_density")%>%
+  ggplot(aes(x = month, y = NO2_column_number_density, group = name, color = NO2_column_number_density)) +
+      geom_line(alpha = 0.4)+
+      xlab("Month") +
+      ylab("NO2 Concentration") +
+      theme_minimal()
 ```
 
 
