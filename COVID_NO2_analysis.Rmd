@@ -47,5 +47,7 @@ head(us.shp)
 covid.NO2 <- merge(owid.filtered, us.shp, by = "location")
 
 #next: look at EPA data to compare (posibly average over counties?), 
+
+#try to time the code and extrapolate to whole world 
 ```
 

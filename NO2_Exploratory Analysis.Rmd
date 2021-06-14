@@ -111,6 +111,7 @@ geom_params <- list(
 path <- image1$getDownloadUrl(geom_params)
 print(path)
 
+
 image1 <- ee$ImageCollection("COPERNICUS/S5P/NRTI/L3_NO2")$filterDate('2020-01-01', '2020-04-01')$select("NO2_column_number_density")$median()
 geom_params <- list(
  crs = 'EPSG:4326',
