@@ -131,3 +131,31 @@ ee_NO2 %>%
 ```
 
 
+```{r, eval = TRUE}
+#Goal is to compute trend in NO2 levels over the years and perform a linear fit 
+createTimeBand <-function(img) {
+  year <- ee$Date(img$get('system:time_start'))$get('year')$subtract(2018L)
+  ee$Image(year)$byte()$addBands(img)
+}
+collection <- ee$
+  ImageCollection('COPERNICUS/S5P/NRTI/L3_NO2')$
+  select('NO2_column_number_density')$
+  map(createTimeBand)
+col_reduce <- collection$reduce(ee$Reducer$linearFit())
+col_reduce <- col_reduce$addBands(
+  col_reduce$select('scale'))
+ee_print(col_reduce)
+Map$setCenter(9.08203, 47.39835, 3)
+Map$addLayer(
+  eeObject = col_reduce,
+  visParams = list(
+    bands = c("scale", "offset", "scale"),
+    min = 0,
+    max = c(0.5, 5, -0.5)
+  ),
+  name = "NO2 trend"
+)
+```
+
+
+
