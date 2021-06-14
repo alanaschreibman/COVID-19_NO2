@@ -53,8 +53,8 @@ gm <- import("geemap")
 ```{r, eval = TRUE}
 ee_Initialize()
 
-# Selecting a ee$ImageCollection. Problem: map seems to be only displaying a small portion of world data; unsure why this is the case. 
-col<-ee$ImageCollection('COPERNICUS/S5P/NRTI/L3_NO2')
+# Successful: Selecting an image from ee$ImageCollection. 
+col.NO2<-ee$ImageCollection('COPERNICUS/S5P/NRTI/L3_NO2')
 start <- ee$Date("2020-03-26")
 end <- ee$Date("2021-06-07")
 filter<-col$filterDate(start,end) %>%
@@ -73,7 +73,7 @@ b1scale<-img$select('NO2_column_number_density')$projection()$nominalScale()
 cat("B1 Scale: ", paste(b1scale$getInfo(),"\n", collapse = " "))
 
 Map$setCenter(65.27,24.11, zoom = 4)
-Map$addLayer(img,visParams=list(bands = "NO2_column_number_density", min = 0,max = 0.0002, palette = c("black", "blue", "purple", "cyan", "green", "yellow", "red")), "True Color Image")
+Map$addLayer(filter,visParams=list(bands = "NO2_column_number_density", min = 0,max = 0.0002, palette = c("black", "blue", "purple", "cyan", "green", "yellow", "red"), opacity=0.4), "True Color Image")
 ```
 
 ```{r, eval = TRUE}
@@ -115,6 +115,17 @@ plotRGB(visible,stretch='lin')
 fn <- "download.NO2_column_number_density.tif"
 r1 <- raster(fn)
 plot(r1, col = terrain.colors(4))
+
+ee_as_raster(
+  image,
+  region = NULL,
+  dsn = NULL,
+  via = "drive",
+  container = "rgee_backup",
+  scale = NULL,
+  maxPixels = 1e+09,
+  lazy = FA
+)
 ```
 
 ```{r, eval = TRUE}
@@ -167,14 +178,47 @@ Map$addLayer(
 ```
 
 ```{r, eval = TRUE}
-NO2img <- ee$ImageCollection("COPERNICUS/S5P/NRTI/L3_NO2")$filterDate('2020-01-01', '2020-04-01')$select("NO2_column_number_density") %>%
+#Successful: world map of NO2 concentrations filtered into colored zones. March-May 2019.
+NO2img <- ee$ImageCollection("COPERNICUS/S5P/NRTI/L3_NO2")$filterDate('2019-03-26', '2019-05-26')$select("NO2_column_number_density") %>%
   ee$ImageCollection$mean()
-pal<-c('#000000','#0000FF','#00FF00','#FF0000')
-Map$setCenter(2.373,48.8683,8)
-map.zones<-NO2img$expression("(b('NO2_column_number_density') > 0.00015) ? 3 :
-(b('NO2_column_number_density') > 0.0001) ? 2 : (b('NO2_column_number_density') > 0.00005) ? 1 : 0"
+pal<-c('#ffffb2','#fecc5c','#fd8d3c','#f03b20','#bd0026')
+Map$setCenter(2.373,48.8683,3)
+map.zones<-NO2img$expression("(b('NO2_column_number_density') > 0.00015) ? 4 : (b('NO2_column_number_density') > 0.000125) ? 3 : (b('NO2_column_number_density') > 0.0001) ? 2 : (b('NO2_column_number_density') > 0.00007) ? 1 : 0"
 )
-Map$addLayer(map.zones,list(min=0,max=3,palette=pal,opacity=0.4),
+Map$addLayer(map.zones,list(min=0,max=4,palette=pal,opacity=0.4),
  'NO2 concentration')
+```
+
+```{r, eval = TRUE}
+#Successful: world map of NO2 concentrations filtered into colored zones. March-May 2020.
+NO2img <- ee$ImageCollection("COPERNICUS/S5P/NRTI/L3_NO2")$filterDate('2020-03-26', '2020-05-26')$select("NO2_column_number_density") %>%
+  ee$ImageCollection$mean()
+pal<-c('#ffffb2','#fecc5c','#fd8d3c','#f03b20','#bd0026')
+Map$setCenter(2.373,48.8683,3)
+map.zones<-NO2img$expression("(b('NO2_column_number_density') > 0.00015) ? 4 : (b('NO2_column_number_density') > 0.000125) ? 3 : (b('NO2_column_number_density') > 0.0001) ? 2 : (b('NO2_column_number_density') > 0.00007) ? 1 : 0"
+)
+Map$addLayer(map.zones,list(min=0,max=4,palette=pal,opacity=0.4),
+ 'NO2 concentration')
+```
+
+```{r, eval = TRUE}
+#Successful: world map of population filtered into colored zones.
+col.pop.den <- ee$ImageCollection("WorldPop/GP/100m/pop")$select("population") %>%
+  ee$ImageCollection$mean()
+pal<-c('#ffffb2','#fecc5c','#fd8d3c','#f03b20','#bd0026')
+Map$setCenter(2.373,48.8683,3)
+map.zones<-pop.den$expression("(b('population') > 40) ? 4 : (b('population') > 35) ? 3 : (b('population') > 25) ? 2 : (b('population') > 15) ? 1 : 0"
+)
+Map$addLayer(map.zones,list(min=0,max=4,palette=pal,opacity=0.4),
+ 'population density')
+```
+
+```{r, eval = TRUE}
+NO2<-ee$ImageCollection('COPERNICUS/S5P/NRTI/L3_NO2')$select('NO2_column_number_density') 
+pop<-ee$ImageCollection('WorldPop/GP/100m/pop')$select('population') 
+filter<-ee$Filter$intersects(leftField='.geo', rightField= '.geo', maxError=10)
+join<-ee$Join$saveAll('NO2_concentration')
+joinCol<-ee$ImageCollection(join$apply(NO2, pop, filter))
+Map$addLayer(joinCol)
 ```
 
