@@ -57,14 +57,23 @@ ee_Initialize()
 col<-ee$ImageCollection('COPERNICUS/S5P/NRTI/L3_NO2')
 start <- ee$Date("2020-03-26")
 end <- ee$Date("2021-06-07")
-filter<-col$filterDate(start,end)
-#Getting the first filtered image
-# ee$ImageCollection to ee$Image
-img <- filter$first()
+filter<-col$filterDate(start,end) %>%
+  ee$ImageCollection$mean()
 ee_print(img,clear=TRUE)
 
+#Get more information using cat:
+bandNames<-img$bandNames()
+cat("Bands: ",paste(bandNames$getInfo(),"\n",collapse=" "))
+
+b1proj<- img$select('NO2_column_number_density')$projection()
+cat("B1 projection: ", paste(b1proj$getInfo(),"\n", collapse = "
+"))
+
+b1scale<-img$select('NO2_column_number_density')$projection()$nominalScale()
+cat("B1 Scale: ", paste(b1scale$getInfo(),"\n", collapse = " "))
+
 Map$setCenter(65.27,24.11, zoom = 4)
-Map$addLayer(img,visParams=list(bands = "NO2_column_number_density", min = 0,max = 10, palette = c("black", "blue", "purple", "cyan", "green", "yellow", "red")), "True Color Image")
+Map$addLayer(img,visParams=list(bands = "NO2_column_number_density", min = 0,max = 0.0002, palette = c("black", "blue", "purple", "cyan", "green", "yellow", "red")), "True Color Image")
 ```
 
 ```{r, eval = TRUE}
@@ -132,7 +141,7 @@ ee_NO2 %>%
 
 
 ```{r, eval = TRUE}
-#Goal is to compute trend in NO2 levels over the years and perform a linear fit 
+#Goal is to compute trend in NO2 levels over the years and perform a linear fit. Problem: output map seems empty. 
 createTimeBand <-function(img) {
   year <- ee$Date(img$get('system:time_start'))$get('year')$subtract(2018L)
   ee$Image(year)$byte()$addBands(img)
@@ -157,5 +166,15 @@ Map$addLayer(
 )
 ```
 
-
+```{r, eval = TRUE}
+NO2img <- ee$ImageCollection("COPERNICUS/S5P/NRTI/L3_NO2")$filterDate('2020-01-01', '2020-04-01')$select("NO2_column_number_density") %>%
+  ee$ImageCollection$mean()
+pal<-c('#000000','#0000FF','#00FF00','#FF0000')
+Map$setCenter(2.373,48.8683,8)
+map.zones<-NO2img$expression("(b('NO2_column_number_density') > 0.00015) ? 3 :
+(b('NO2_column_number_density') > 0.0001) ? 2 : (b('NO2_column_number_density') > 0.00005) ? 1 : 0"
+)
+Map$addLayer(map.zones,list(min=0,max=3,palette=pal,opacity=0.4),
+ 'NO2 concentration')
+```
 
