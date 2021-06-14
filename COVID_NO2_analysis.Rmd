@@ -1,0 +1,51 @@
+---
+title: "NO2 and COVID-19"
+author: "Alana Schreibman"
+date: "5/27/2021"
+output: 
+  html_document:
+    toc: true
+    toc_float: 
+        collapsed: true
+        smooth_scroll: true
+    depth: 3 
+    theme: cosmo
+    highlight: pygments
+---
+
+```{r global options, include = FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+```
+
+```{r, eval = TRUE}
+library(raster)
+library(maptools)
+library(dplyr)
+library(sp)
+library(rgdal)
+#Reading in US data from Earth Engine. 
+test <- raster('download.NO2_column_number_density.tif')
+class(test)
+head(test)
+plot(test)
+str(test)
+str_name<-'download.NO2_column_number_density.tif' 
+
+#Reading in shapefile and filtering for US only. 
+data(wrld_simpl)
+plot(wrld_simpl) 
+us.shp <- wrld_simpl[wrld_simpl$NAME=="United States", ]
+
+#Extracting mean NO2 values for US and adding 
+r.vals <- extract(test, us.shp)
+r.mean <- lapply(r.vals, FUN=mean)
+us.shp@data <- data.frame(us.shp@data, meanNO2=r.mean) %>%
+  rename(meanNO2 = X6.6934885908035e.05, location = NAME) 
+head(us.shp)
+
+#Merged geospatial data set with COVID data. 
+covid.NO2 <- merge(owid.filtered, us.shp, by = "location")
+
+#next: look at EPA data to compare (posibly average over counties?), 
+```
+
