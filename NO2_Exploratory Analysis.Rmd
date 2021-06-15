@@ -99,18 +99,22 @@ Map$addLayer(image, no2viz,'NO2')
 #loading the image to be downloaded
 
 #Downloading file of the US.
+start_time <- Sys.time()
 image1 <- ee$ImageCollection("COPERNICUS/S5P/NRTI/L3_NO2")$filterDate('2018-06-26', '2020-06-26')$select("NO2_column_number_density") %>%
    ee$ImageCollection$mean()
 geometry <- ee$Geometry$Rectangle(
-  coords = c(-170, 18, -56, 71))
+  coords = c(-170, 6, 179.9, -7))
 geom_params <- list(
  crs = 'EPSG:4326',
  region = geometry,
  maxPixels = 1E9
 )
+print(geom_params)
 path <- image1$getDownloadUrl(geom_params)
 print(path)
-
+end_time <- Sys.time()
+end_time - start_time
+ c(-170, 18, -56, 71))
 
 image1 <- ee$ImageCollection("COPERNICUS/S5P/NRTI/L3_NO2")$filterDate('2020-01-01', '2020-04-01')$select("NO2_column_number_density")$median()
 geom_params <- list(
@@ -118,7 +122,6 @@ geom_params <- list(
  maxPixels = 1E9
 )
 path <- image1$getDownloadUrl(geom_params)
-print(path)
 
 thermal <- stack('download.NO2_column_number_density.tif')
 plotRGB(thermal,stretch='lin')

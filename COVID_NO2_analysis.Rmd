@@ -27,6 +27,7 @@ library(rgdal)
 test <- raster('download.NO2_column_number_density.tif')
 class(test)
 head(test)
+dim(test)
 plot(test)
 str(test)
 str_name<-'download.NO2_column_number_density.tif' 
@@ -43,11 +44,9 @@ us.shp@data <- data.frame(us.shp@data, meanNO2=r.mean) %>%
   rename(meanNO2 = X6.6934885908035e.05, location = NAME) 
 head(us.shp)
 
-#Merged geospatial data set with COVID data. 
+#Merged geospatial data set with COVID data (variables come from COVID exploratory analysis RMD file). 
 covid.NO2 <- merge(owid.filtered, us.shp, by = "location")
 
-#next: look at EPA data to compare (posibly average over counties?), 
-
-#try to time the code and extrapolate to whole world 
+#next: look at EPA data to compare (posibly average over counties?)
 ```
 
