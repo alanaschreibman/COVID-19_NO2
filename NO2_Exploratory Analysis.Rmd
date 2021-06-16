@@ -26,26 +26,34 @@ library(ggplot2)
 library(tidyr)
 library(dplyr)
 library(tidyverse)
-```
-
-#Earth Engine API setup. 
-``` {r, eval = FALSE}
-install.packages("reticulate")
-install.packages("R6")
-install.packages("processx")
-install.packages("rgee")
-install.packages("geojsonio")
+library(googledrive)
+library(googleCloudStorageR)
 library(mapview)
 library(remotes)
 library(reticulate)
 library(rgee)
+```
+
+#Earth Engine API setup. 
+``` {r, eval = FALSE}
 install_github("r-spatial/rgee")
 ee_install(py_env = "rgee")
 ee_install()
+gcs_setup()
+```
+```{r, eval = TRUE}
+gcs_auth("/Users/alanaschreibman/ska_2.json")
+Sys.setenv("GAR_CLIENT_JSON" = "/Users/alanaschreibman/ska_2.json")
+gcs_auth()
+gcs_auth(email = "alanacate4444@gmail.com")
+```
+
+```{r, eval = TRUE}
 ee_Initialize()
-ee_install_upgrade()
-py_install("geemap")
-gm <- import("geemap")
+ee_Initialize(email = 'alanacate4444@gmail.com')
+ee_Initialize(email = 'alanacate4444@gmail.com', drive = TRUE)
+ee_Initialize(email = 'alanacate4444@gmail.com', gcs = TRUE)
+ee_Initialize(gcs = TRUE)
 ```
 
 
@@ -103,18 +111,53 @@ start_time <- Sys.time()
 image1 <- ee$ImageCollection("COPERNICUS/S5P/NRTI/L3_NO2")$filterDate('2018-06-26', '2020-06-26')$select("NO2_column_number_density") %>%
    ee$ImageCollection$mean()
 geometry <- ee$Geometry$Rectangle(
-  coords = c(-170, 6, 179.9, -7))
+  coords = c(-170, 18, -56, 71))
 geom_params <- list(
  crs = 'EPSG:4326',
  region = geometry,
- maxPixels = 1E9
+ maxPixels = 1E10
 )
 print(geom_params)
 path <- image1$getDownloadUrl(geom_params)
 print(path)
 end_time <- Sys.time()
 end_time - start_time
- c(-170, 18, -56, 71))
+
+#Attempt to use cloud storage:
+image1 <- ee$ImageCollection("COPERNICUS/S5P/NRTI/L3_NO2")$filterDate('2018-06-26', '2020-06-26')$select("NO2_column_number_density") %>%
+   ee$ImageCollection$mean()
+geometry <- ee$Geometry$Rectangle(
+  coords = c(-170, 18, -56, 71),
+  crs = 'EPSG:4326',
+  scale = 30
+)
+NO2 <- ee_as_raster(
+  image = image1,
+  region = geometry,
+  via = "gcs",
+  container = "rgee_bucket"
+)
+
+#Attempt to use cloud storage: different method. 
+image1 <- ee$ImageCollection("COPERNICUS/S5P/NRTI/L3_NO2")$filterDate('2018-07-10', '2020-07-10')$select("NO2_column_number_density") %>%
+   ee$ImageCollection$mean()
+geometry <- ee$Geometry$Rectangle(
+  coords = c(-170, 18, -56, 71),
+  crs = 'EPSG:4326',
+  scale = 30
+)
+NO2.earthengine2 <- ee_image_to_gcs(
+  image = image1,
+  region = geometry,
+  bucket = "rgee_bucket", 
+  fileFormat = "GEO_TIFF",
+  fileNamePrefix = "NO2_earthengine2"
+)
+
+NO2.earthengine2$start()
+ee_monitoring(NO2.earthengine2)
+
+ee_gcs_to_local(task = NO2.earthengine)
 
 image1 <- ee$ImageCollection("COPERNICUS/S5P/NRTI/L3_NO2")$filterDate('2020-01-01', '2020-04-01')$select("NO2_column_number_density")$median()
 geom_params <- list(
