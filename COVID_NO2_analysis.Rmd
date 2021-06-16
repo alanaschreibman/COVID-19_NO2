@@ -22,6 +22,7 @@ library(raster)
 library(maptools)
 library(dplyr)
 library(sp)
+library(sf)
 library(rgdal)
 #Reading in US data from Earth Engine. 
 test <- raster('download.NO2_column_number_density.tif')
@@ -30,12 +31,12 @@ rectangle <- rasterToPoints(test) %>%
 names(rectangle)[3] <- "NO2_Concentration"
 rectangle
 
-
-continental.us <- st_read("/Users/alanaschreibman/COVID-19_NO2/continental_us/continental_us.shp")
-plot(continental.us)
+#Reading in shapefile and filtering for US only.
 data(wrld_simpl)
 plot(wrld_simpl) 
 us.shp <- wrld_simpl[wrld_simpl$NAME=="United States", ]
+us.shp
+plot(us.shp)
 
 class(test)
 head(test)
@@ -46,6 +47,13 @@ str(test)
 
 #Extracting mean NO2 values for US and adding 
 r.vals <- raster::extract(test, us.shp)
+r.mean <- lapply(r.vals, FUN=mean)
+us.shp@data <- data.frame(us.shp@data, "meanNO2" = r.mean) %>%
+  rename(meanNO2 = X6.6934885908035e.05, location = NAME) 
+head(us.shp)
+
+#trying w second shapefile
+r.vals <- raster::extract(test, continental.us)
 r.mean <- lapply(r.vals, FUN=mean)
 us.shp@data <- data.frame(us.shp@data, "meanNO2" = r.mean) %>%
   rename(meanNO2 = X6.6934885908035e.05, location = NAME) 
