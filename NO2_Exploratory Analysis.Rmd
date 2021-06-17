@@ -153,8 +153,24 @@ NO2.earthengine2 <- ee_image_to_gcs(
   fileNamePrefix = "NO2_earthengine2"
 )
 
-NO2.earthengine2$start()
-ee_monitoring(NO2.earthengine2)
+#Continental US ONLY. 
+image1 <- ee$ImageCollection("COPERNICUS/S5P/NRTI/L3_NO2")$filterDate('2018-07-01', '2018-10-01')$select("NO2_column_number_density") %>%
+   ee$ImageCollection$mean()
+geometry <- ee$Geometry$Rectangle(
+  coords = c(-130, 23, -65, 49),
+  scale = 30,
+  crs = 'EPSG:4326'
+)
+NO2.continental.US <- ee_image_to_gcs(
+  image = image1,
+  region = geometry,
+  bucket = "rgee_bucket", 
+  fileFormat = "GEO_TIFF",
+  fileNamePrefix = "NO2_earthengine2"
+)
+
+NO2.continental.US$start()
+ee_monitoring(NO2.continental.US)
 
 ee_gcs_to_local(task = NO2.earthengine2)
 

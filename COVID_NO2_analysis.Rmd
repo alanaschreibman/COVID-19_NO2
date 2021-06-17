@@ -24,9 +24,16 @@ library(dplyr)
 library(sp)
 library(sf)
 library(rgdal)
+```
+
+```{r, eval = TRUE}
 #Reading in US data from Earth Engine. 
-test <- raster('download.NO2_column_number_density.tif')
-rectangle <- rasterToPoints(test) %>%
+continental.US.NO2 <- raster('continental_us.tif') %>%
+  flip(direction='y')
+plot(continental.US.NO2)
+
+#Getting rectangle into data frame form for later use (will use inner_join to match coordinates from rectangle with NO2 concentrations from below).
+rectangle <- rasterToPoints(continental.US.NO2) %>%
   as.data.frame() 
 names(rectangle)[3] <- "NO2_Concentration"
 rectangle
@@ -35,39 +42,25 @@ rectangle
 data(wrld_simpl)
 plot(wrld_simpl) 
 us.shp <- wrld_simpl[wrld_simpl$NAME=="United States", ]
-us.shp
 plot(us.shp)
 
-class(test)
-head(test)
-dim(test)
-plot(test)
+#More exploration on raster NO2 file. 
+head(continental.US.NO2 )
+dim(continental.US.NO2 )
+plot(continental.US.NO2 )
 plot(wrld_simpl[wrld_simpl$NAME=="United States", ], add = TRUE)
-str(test)
+str(continental.US.NO2 )
 
-#Extracting mean NO2 values for US and adding 
-r.vals <- raster::extract(test, us.shp)
-r.mean <- lapply(r.vals, FUN=mean)
-us.shp@data <- data.frame(us.shp@data, "meanNO2" = r.mean) %>%
-  rename(meanNO2 = X6.6934885908035e.05, location = NAME) 
-head(us.shp)
-
-#trying w second shapefile
-r.vals <- raster::extract(test, continental.us)
-r.mean <- lapply(r.vals, FUN=mean)
-us.shp@data <- data.frame(us.shp@data, "meanNO2" = r.mean) %>%
-  rename(meanNO2 = X6.6934885908035e.05, location = NAME) 
-head(us.shp)
-
-#Converting US raster data to data frame.
-US.area <- as.data.frame(r.vals, col.names = "NO2_Concentration")
-inner_join(rectangle, US.area, by = "NO2_Concentration") %>%
-  arrange(x)
-test.df <- test.df %>% select(c(x, y))
-write.csv(test.df,"C:\\Users\\alanaschreibman\\US_lon_lat.csv", row.names = FALSE)
+#Extracting mean NO2 values for US and adding to coordinates data to make final data frame.
+r.vals <- raster::extract(continental.US.NO2 , us.shp)
+r.mean <- lapply(r.vals, FUN=mean, na.rm = TRUE)
+final.df <- data.frame(us.shp@data, r.mean) 
+names(final.df)[12] <- "NO2_Concentration"
+names(final.df)[5] <- "location"
+head(final.df)
 
 #Merged geospatial data set with COVID data (variables come from COVID exploratory analysis RMD file). 
-covid.NO2 <- merge(owid.filtered, us.shp, by = "location")
+covid.NO2 <- merge(owid.filtered, final.df, by = "location")
 
 #next: look at EPA data to compare (posibly average over counties?)
 #get lat/lon w NO2 and perform correlation test (that way no need to convert)
@@ -76,28 +69,57 @@ covid.NO2 <- merge(owid.filtered, us.shp, by = "location")
 ```
 
 ```{r, eval = TRUE}
-#Reading in US data from Earth Engine: attemtping version from cloud storage. 
-test2 <- raster('NO2_world.tif')
+#Reading in US data from Earth Engine: attempt at world file unsuccessful. 
+world.NO2 <- raster('NO2_world.tif')
 str(test2)
-vals.df <- rasterToPoints(test2) %>%
+world.NO2.df <- rasterToPoints(world.NO2) %>%
   as.data.frame()
-vals.df
-class(test)
-head(test)
-tail(test)
-dim(test)
-plot(test2)
+world.NO2.df
+class(world.NO2)
+head(world.NO2)
+tail(world.NO2)
+dim(world.NO2)
+plot(world.NO2) #not showing all data points expected
 plot(wrld_simpl, add = TRUE)
-ggplot() +
-  geom_raster(data = test2, aes(fill = NO2_column_density))
-plot(wrld_simpl[wrld_simpl$NAME=="United States", ], add = TRUE)
-str(test)
-
-
-install.packages("curl")
-library(curl)
-cd~
-touch
-echo "machine urs.earthdata.nasa.gov login <uid> password <password>" >> .netrc
 ```
+
+#Verification that satellite data resembles ground data. 
+```{r, eval = TRUE}
+#Getting satellite data specifically for this time frame. 
+July_Oct2018.sat <- raster('July2018-Oct2018.tif') %>%
+  flip(direction='y')
+plot(July_Oct2018.sat)
+plot(us.shp, add = TRUE)
+
+#Getting rectangle into data frame for later comparison (will use inner_join to match coordinates from rectangle with NO2 concentrations from below). 
+rectangle.sat <- rasterToPoints(July_Oct2018.sat) %>%
+  as.data.frame()  
+rectangle.sat <- rectangle.sat %>% 
+  rename(c("longitude" = "x", "latitude" = "y")) 
+names(rectangle.sat)[3] <- "NO2_Concentration"
+rectangle.sat <- select(rectangle.sat, latitude, longitude, NO2_Concentration)
+rectangle.sat
+
+#Extracting NO2 values that overlap with US shapefile and using rectangle.sat to keep only the overlap.  
+sat.r.vals <- raster::extract(July_Oct2018.sat, us.shp)
+NO2.sat.df <- as.data.frame(sat.r.vals, col.names = "NO2_Concentration")
+July_Oct2018.sat<- inner_join(rectangle.sat, NO2.sat.df, by = "NO2_Concentration") %>%
+  arrange(latitude) #Used later to compare satellite data to ground data. 
+July_Oct2018.sat #Final satellite data to use for comparison to EPA data. 
+
+#Selecting just latitude and longitude from data frame just made to use with Pargasite retrieval. 
+US.lat.lon <- July_Oct2018.sat %>% select(c(latitude, longitude))
+write.csv(US.lon.lat,"C:\\Users\\alanaschreibman\\US_lat_lon.csv", row.names = FALSE) #Used to gather EPA data from Pargasite. 
+
+#Reading in EPA data
+#Problem w Pargasite: only overlapping time frame is July 2018 - October 2018 (Pargasite stops working in November 2018)
+July_Oct2018.ground <- read.csv(file = 'July_Oct2018NO2.csv') %>% select(c("Latitude", "Longitude", "no2_estimate"))
+July_Oct2018.ground #Final EPA data to use in comparison to satellite data. 
+
+#Perform correlation test between rasters. 
+cor(values(July_Oct2018.sat),
+    July_Oct2018.ground[July_Oct2018.ground$no2_estimate],
+    use = "na.or.complete")
+```
+
 
