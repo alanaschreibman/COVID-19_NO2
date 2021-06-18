@@ -17,8 +17,12 @@ output:
 knitr::opts_chunk$set(warning = FALSE, message = FALSE)
 ```
 
-#Load libraries needed.  
+***
+
+The purpose of this file is to learn Earth Engine commands through the `rgee` package and retrieve the air quality data to be used in later analysis. 
+
 ``` {r, eval = FALSE}
+#Load libraries needed.  
 library(raster)
 library(sf)
 library(rgdal)
@@ -32,9 +36,10 @@ library(mapview)
 library(remotes)
 library(reticulate)
 library(rgee)
+library(lubridate)
 ```
 
-#Earth Engine API setup. 
+###Earth Engine API setup. 
 ``` {r, eval = FALSE}
 install_github("r-spatial/rgee")
 ee_install(py_env = "rgee")
@@ -56,7 +61,7 @@ ee_Initialize(email = 'alanacate4444@gmail.com', gcs = TRUE)
 ```
 
 
-#Experimenting with Earth Engine.
+###Experimenting with Earth Engine.
 ```{r, eval = TRUE}
 ee_Initialize()
 
@@ -83,29 +88,9 @@ Map$setCenter(65.27,24.11, zoom = 4)
 Map$addLayer(filter,visParams=list(bands = "NO2_column_number_density", min = 0,max = 0.0002, palette = c("black", "blue", "purple", "cyan", "green", "yellow", "red"), opacity=0.4), "True Color Image")
 ```
 
+###Downloading data for raster package in R. 
 ```{r, eval = TRUE}
-#Can't figure out the problem here: seems like map generated is empty.
-blocks <- ee$ImageCollection("COPERNICUS/S5P/NRTI/L3_NO2")
-start <- ee$Date("2019-07-11")
-end <- ee$Date("2019-07-20")
-subset <- blocks$filterDate(start,end)
-image <- subset$first()
-image
-sf_subset <- ee_as_sf(x = image)
-no2viz <- list(
-        min = 0,
-        max = .0002,
-        bands = "NO2_column_number_density",
-        palette = c("black", "blue", "purple", "cyan", "green", "yellow", "red")
-)
-Map$addLayer(image, no2viz,'NO2')
-```
-
-```{r, eval = TRUE}
-#Attempt to download and use raster commands. Commands seem to work; problem is that only small regions can be downloaded at a time because there are too many pixels.
-#loading the image to be downloaded
-
-#Downloading file of the US.
+#US only--downloading URL for local use (not good for large files--do not use).
 start_time <- Sys.time()
 image1 <- ee$ImageCollection("COPERNICUS/S5P/NRTI/L3_NO2")$filterDate('2018-06-26', '2020-06-26')$select("NO2_column_number_density") %>%
    ee$ImageCollection$mean()
@@ -137,23 +122,25 @@ NO2 <- ee_as_raster(
   container = "rgee_bucket"
 )
 
-#Attempt to use cloud storage: different method. 
-image1 <- ee$ImageCollection("COPERNICUS/S5P/NRTI/L3_NO2")$filterDate('2018-07-10', '2020-07-10')$select("NO2_column_number_density") %>%
+#World data using cloud storage. Commands seem to work; problem is that only small regions can be downloaded at a time because there are too many pixels.
+image1 <- ee$ImageCollection("COPERNICUS/S5P/NRTI/L3_NO2")$filterDate('2018-07-01', '2018-10-01')$select("NO2_column_number_density") %>%
    ee$ImageCollection$mean()
 geometry <- ee$Geometry$Rectangle(
-  coords = c(-180, -90, 180, 90),
+  coords = c(-179, -89, 180, 90),
   scale = 30,
   crs = 'EPSG:4326'
 )
-NO2.earthengine2 <- ee_image_to_gcs(
+NO2.world <- ee_image_to_gcs(
   image = image1,
   region = geometry,
   bucket = "rgee_bucket", 
   fileFormat = "GEO_TIFF",
-  fileNamePrefix = "NO2_earthengine2"
+  fileNamePrefix = "NO2_world_earthengine"
 )
+NO2.world$start()
+ee_monitoring(NO2.world)
 
-#Continental US ONLY. 
+#Continental US only using cloud storage. 
 image1 <- ee$ImageCollection("COPERNICUS/S5P/NRTI/L3_NO2")$filterDate('2018-07-01', '2018-10-01')$select("NO2_column_number_density") %>%
    ee$ImageCollection$mean()
 geometry <- ee$Geometry$Rectangle(
@@ -168,29 +155,104 @@ NO2.continental.US <- ee_image_to_gcs(
   fileFormat = "GEO_TIFF",
   fileNamePrefix = "NO2_earthengine2"
 )
-
 NO2.continental.US$start()
 ee_monitoring(NO2.continental.US)
 
-ee_gcs_to_local(task = NO2.earthengine2)
+#US only using cloud storage: making into function where dates are input. 
+geometry <- ee$Geometry$Rectangle(
+  coords = c(-130, 23, -65, 49),
+  scale = 30,
+  crs = 'EPSG:4326'
+    )
+date.fxn <- function(date.start, date.end) {
+  image1 <- ee$ImageCollection("COPERNICUS/S5P/NRTI/L3_NO2")$filterDate(date.start, date.end)$select("NO2_column_number_density") %>% ee$ImageCollection$mean()
+  NO2.continental.US <- ee_image_to_gcs(
+    image = image1,
+    region = geometry,
+    bucket = "rgee_bucket", 
+    fileFormat = "GEO_TIFF",
+    fileNamePrefix = paste0("US_NO2_", (date.start), "_start")
+  )
+  output1 <- NO2.continental.US$start()
+  output2 <- ee_monitoring(NO2.continental.US)
+  return(c(output1, output2))
+} 
 
-image1 <- ee$ImageCollection("COPERNICUS/S5P/NRTI/L3_NO2")$filterDate('2020-01-01', '2020-04-01')$select("NO2_column_number_density")$median()
-geom_params <- list(
- crs = 'EPSG:4326',
- maxPixels = 1E9
-)
-path <- image1$getDownloadUrl(geom_params)
+#Applying function:
+#Go by first day of first lockdown order -> two months later. Then find time period of equivalent two-month length, starting before the lockdown. Apply this first to 2019, then 2020, then 2021. 
 
-thermal <- stack('download.NO2_column_number_density.tif')
-plotRGB(thermal,stretch='lin')
-visible<-stack('download.NO2_column_number_density.tif')
-plotRGB(visible,stretch='lin')
+#United States: California on March 19th. 
+date.fxn("2019-01-19", "2019-03-19") 
+date.fxn("2019-03-19", "2019-05-19") 
 
-fn <- "download.NO2_column_number_density.tif"
-r1 <- raster(fn)
-plot(r1, col = terrain.colors(4))
+date.fxn("2020-01-19", "2020-03-19") 
+date.fxn("2020-03-19", "2020-05-19") 
+
+date.fxn("2021-01-19", "2021-03-19") 
+date.fxn("2021-03-19", "2021-05-19") 
 ```
 
+###Mapping data with Earth Engine interactive maps. 
+####Mapping world NO2 concentrations in 2019. 
+```{r, eval = TRUE}
+#Successful: world map of NO2 concentrations filtered into colored zones. March-May 2019.
+NO2img <- ee$ImageCollection("COPERNICUS/S5P/NRTI/L3_NO2")$filterDate('2019-03-26', '2019-05-26')$select("NO2_column_number_density") %>%
+  ee$ImageCollection$mean()
+pal<-c('#ffffb2','#fecc5c','#fd8d3c','#f03b20','#bd0026')
+Map$setCenter(2.373,48.8683,3)
+map.zones<-NO2img$expression("(b('NO2_column_number_density') > 0.00015) ? 4 : (b('NO2_column_number_density') > 0.000125) ? 3 : (b('NO2_column_number_density') > 0.0001) ? 2 : (b('NO2_column_number_density') > 0.00007) ? 1 : 0"
+)
+Map$addLayer(map.zones,list(min=0,max=4,palette=pal,opacity=0.4),
+ 'NO2 concentration')
+```
+
+####Mapping world NO2 concentrations in 2020. 
+```{r, eval = TRUE}
+#Successful: world map of NO2 concentrations filtered into colored zones. March-May 2020.
+NO2img <- ee$ImageCollection("COPERNICUS/S5P/NRTI/L3_NO2")$filterDate('2020-03-26', '2020-05-26')$select("NO2_column_number_density") %>%
+  ee$ImageCollection$mean()
+pal<-c('#ffffb2','#fecc5c','#fd8d3c','#f03b20','#bd0026')
+Map$setCenter(2.373,48.8683,3)
+map.zones<-NO2img$expression("(b('NO2_column_number_density') > 0.00015) ? 4 : (b('NO2_column_number_density') > 0.000125) ? 3 : (b('NO2_column_number_density') > 0.0001) ? 2 : (b('NO2_column_number_density') > 0.00007) ? 1 : 0"
+)
+Map$addLayer(map.zones,list(min=0,max=4,palette=pal,opacity=0.4),
+ 'NO2 concentration')
+```
+
+####Mapping world population density. 
+```{r, eval = TRUE}
+#Successful: world map of population filtered into colored zones.
+col.pop.den <- ee$ImageCollection("WorldPop/GP/100m/pop")$select("population") %>%
+  ee$ImageCollection$mean()
+pal<-c('#ffffb2','#fecc5c','#fd8d3c','#f03b20','#bd0026')
+Map$setCenter(2.373,48.8683,3)
+map.zones<-pop.den$expression("(b('population') > 40) ? 4 : (b('population') > 35) ? 3 : (b('population') > 25) ? 2 : (b('population') > 15) ? 1 : 0"
+)
+Map$addLayer(map.zones,list(min=0,max=4,palette=pal,opacity=0.4),
+ 'population density')
+```
+
+###Unsuccessful Earth Engine commands (delete later).
+####Unsuccessful: playing with map settings. 
+```{r, eval = TRUE}
+#Can't figure out the problem here: seems like map generated is empty.
+blocks <- ee$ImageCollection("COPERNICUS/S5P/NRTI/L3_NO2")
+start <- ee$Date("2019-07-11")
+end <- ee$Date("2019-07-20")
+subset <- blocks$filterDate(start,end)
+image <- subset$first()
+image
+sf_subset <- ee_as_sf(x = image)
+no2viz <- list(
+        min = 0,
+        max = .0002,
+        bands = "NO2_column_number_density",
+        palette = c("black", "blue", "purple", "cyan", "green", "yellow", "red")
+)
+Map$addLayer(image, no2viz,'NO2')
+```
+
+###Unsuccessful: time series analysis.
 ```{r, eval = TRUE}
 #Goal: Filter the dataset by dates, reproject and select only the band "NO2_column_number_density". Get a time series plot of NO2 values. 
 #Problem here: "request payload size exceeds the limit: 10485760 bytes" error message. 
@@ -213,7 +275,7 @@ ee_NO2 %>%
       theme_minimal()
 ```
 
-
+###Unsuccesul: time band with linear fit
 ```{r, eval = TRUE}
 #Goal is to compute trend in NO2 levels over the years and perform a linear fit. Problem: output map seems empty. 
 createTimeBand <-function(img) {
@@ -239,41 +301,3 @@ Map$addLayer(
   name = "NO2 trend"
 )
 ```
-
-```{r, eval = TRUE}
-#Successful: world map of NO2 concentrations filtered into colored zones. March-May 2019.
-NO2img <- ee$ImageCollection("COPERNICUS/S5P/NRTI/L3_NO2")$filterDate('2019-03-26', '2019-05-26')$select("NO2_column_number_density") %>%
-  ee$ImageCollection$mean()
-pal<-c('#ffffb2','#fecc5c','#fd8d3c','#f03b20','#bd0026')
-Map$setCenter(2.373,48.8683,3)
-map.zones<-NO2img$expression("(b('NO2_column_number_density') > 0.00015) ? 4 : (b('NO2_column_number_density') > 0.000125) ? 3 : (b('NO2_column_number_density') > 0.0001) ? 2 : (b('NO2_column_number_density') > 0.00007) ? 1 : 0"
-)
-Map$addLayer(map.zones,list(min=0,max=4,palette=pal,opacity=0.4),
- 'NO2 concentration')
-```
-
-```{r, eval = TRUE}
-#Successful: world map of NO2 concentrations filtered into colored zones. March-May 2020.
-NO2img <- ee$ImageCollection("COPERNICUS/S5P/NRTI/L3_NO2")$filterDate('2020-03-26', '2020-05-26')$select("NO2_column_number_density") %>%
-  ee$ImageCollection$mean()
-pal<-c('#ffffb2','#fecc5c','#fd8d3c','#f03b20','#bd0026')
-Map$setCenter(2.373,48.8683,3)
-map.zones<-NO2img$expression("(b('NO2_column_number_density') > 0.00015) ? 4 : (b('NO2_column_number_density') > 0.000125) ? 3 : (b('NO2_column_number_density') > 0.0001) ? 2 : (b('NO2_column_number_density') > 0.00007) ? 1 : 0"
-)
-Map$addLayer(map.zones,list(min=0,max=4,palette=pal,opacity=0.4),
- 'NO2 concentration')
-```
-
-```{r, eval = TRUE}
-#Successful: world map of population filtered into colored zones.
-col.pop.den <- ee$ImageCollection("WorldPop/GP/100m/pop")$select("population") %>%
-  ee$ImageCollection$mean()
-pal<-c('#ffffb2','#fecc5c','#fd8d3c','#f03b20','#bd0026')
-Map$setCenter(2.373,48.8683,3)
-map.zones<-pop.den$expression("(b('population') > 40) ? 4 : (b('population') > 35) ? 3 : (b('population') > 25) ? 2 : (b('population') > 15) ? 1 : 0"
-)
-Map$addLayer(map.zones,list(min=0,max=4,palette=pal,opacity=0.4),
- 'population density')
-```
-
-

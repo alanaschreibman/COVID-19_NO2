@@ -18,8 +18,10 @@ knitr::opts_chunk$set(warning = FALSE, message = FALSE)
 ```
 
 ```{r, eval = TRUE}
+#Load libraries needed. 
 library(raster)
 library(maptools)
+library(ggplot2)
 library(dplyr)
 library(sp)
 library(sf)
@@ -61,16 +63,12 @@ head(final.df)
 
 #Merged geospatial data set with COVID data (variables come from COVID exploratory analysis RMD file). 
 covid.NO2 <- merge(owid.filtered, final.df, by = "location")
-
-#next: look at EPA data to compare (posibly average over counties?)
-#get lat/lon w NO2 and perform correlation test (that way no need to convert)
-  #need to get EPA data w longitude and latitude points
-
 ```
-
+###Reading in world satellite data. 
 ```{r, eval = TRUE}
-#Reading in US data from Earth Engine: attempt at world file unsuccessful. 
+#Reading in US data from Earth Engine: attempt at world file unsuccessful (too large?). 
 world.NO2 <- raster('NO2_world.tif')
+world.NO2 <- raster('NO2_world_earthengine_2021_06_17_14_15_02.tif')
 str(world.NO2)
 world.NO2.df <- rasterToPoints(world.NO2) %>%
   as.data.frame()
@@ -83,7 +81,8 @@ plot(world.NO2) #not showing all data points expected
 plot(wrld_simpl, add = TRUE)
 ```
 
-#Verification that satellite data resembles ground data. 
+###Correlation analysis: United States, satellite vs. ground EPA. 
+####Formatting sattelite and ground data. 
 ```{r, eval = TRUE}
 #Getting satellite data specifically for this time frame. 
 July_Oct2018.sat.r <- raster('July2018-Oct2018.tif') %>%
@@ -102,7 +101,7 @@ names(rectangle.sat)[3] <- "NO2_Concentration"
 rectangle.sat <- select(rectangle.sat, latitude, longitude, NO2_Concentration)
 rectangle.sat
 
-#Extracting NO2 values that overlap with US shapefile and using rectangle.sat to keep only the overlap.  
+#Extracting NO2 values that overlap with US shapefile and using rectangle.sat to restore the coordinate data.  
 sat.r.vals <- raster::extract(July_Oct2018.sat.r, us.shp)
 NO2.sat.df <- as.data.frame(sat.r.vals, col.names = "NO2_Concentration")
 July_Oct2018.sat<- inner_join(rectangle.sat, NO2.sat.df, by = "NO2_Concentration") %>%
@@ -111,14 +110,14 @@ July_Oct2018.sat #Final satellite data to use for comparison to EPA data.
 
 #Selecting just latitude and longitude from data frame just made to use with Pargasite retrieval. 
 US.lat.lon <- July_Oct2018.sat %>% select(c(latitude, longitude))
-write.csv(US.lon.lat,"C:\\Users\\alanaschreibman\\US_lat_lon.csv", row.names = FALSE) #Used to gather EPA data from Pargasite. 
+write.csv(US.lat.lon, file.path("US_ground_NO2", "US_lat_lon.csv"), row.names = FALSE) #Used to gather EPA data from Pargasite. 
 
 #Reading in EPA data
 #Problem w Pargasite: only overlapping time frame is July 2018 - October 2018 (Pargasite stops working in November 2018)
-July_Oct2018.ground <- read.csv(file = 'July_Oct2018NO2.csv') %>% select(c("Latitude", "Longitude", "no2_estimate"))
+July_Oct2018.ground <- read.csv(file = './US_ground_NO2/July_Oct2018NO2.csv') %>% select(c("Latitude", "Longitude", "no2_estimate"))
 July_Oct2018.ground #Final EPA data to use in comparison to satellite data. 
 
-#Attempt to get EPA data frame into raster format.
+#EPA data frame changed to raster format.
 library(sp)
 library(rgdal)
 coordinates(July_Oct2018.ground)=~Longitude+Latitude
@@ -129,7 +128,9 @@ July_Oct2018.ground.r = raster(July_Oct2018.ground.r)
 projection(July_Oct2018.ground.r) = CRS("+init=epsg:4326")
 plot(July_Oct2018.ground.r)
 writeRaster(July_Oct2018.ground.r,"July_Oct2018.ground.r.tif") #Saves as geoTIFF file. 
-
+```
+####Checking for satellite data correlation to ground data.
+```{r, eval = TRUE}
 #Resampling raster data to be same size for comparisons. 
 July_Oct2018.sat.r.re <- July_Oct2018.sat.r %>% resample(July_Oct2018.ground.r)
 plot(July_Oct2018.sat.r.re)
@@ -138,6 +139,105 @@ plot(July_Oct2018.sat.r.re)
 cor(values(July_Oct2018.sat.r.re),
     values(July_Oct2018.ground.r),
     use = "na.or.complete")
+
+#Linaer model estimation. 
+lm1 <- lm(values(July_Oct2018.sat.r.re) ~ values(July_Oct2018.ground.r))
+summary(lm1)
+
+#Local correlation estimates--shows where locally on map specific regions are positively or negatively correlated. (Getting an error: code from this website https://statnmap.com/2018-01-27-spatial-correlation-between-rasters/)
+values(July_Oct2018.sat.r.re) <- 1:ncell(July_Oct2018.sat.r.re)
+
+matrix_ground <- values(July_Oct2018.ground.r)
+
+focal_cor <- focal(
+  x = July_Oct2018.sat.r.re,
+  w = matrix(1, 5, 5),
+  # fun = function(x, y = temp_chl_s){ # Original
+    # cor(values(y)[x, 1], values(y)[x, 2], # Original
+        # use = "na.or.complete")
+  # },
+  fun = function(x, y = matrix_ground){ # [MW]
+    cor(y[x, 1], y[x, 2], # [MW]
+        use = "na.or.complete")
+  },
+  filename = file.path("focal_cor.tif"),
+  overwrite = TRUE
+)
+```
+###Correlation analysis: China, satellite vs. ground data. 
+####Formatting sattelite and ground data to be used for correlation analysis (China only). 
+```{r, eval = TRUE}
+#No success in retrieving data so far. 
+
+#Getting satellite data specifically for this time frame. 
+July_Oct2018.sat.r <- raster('July2018-Oct2018.tif') %>%
+  flip(direction='y')
+July_Oct2018.sat.r <- crop(July_Oct2018.sat.r, extent(us.shp))
+July_Oct2018.sat.r <- mask(July_Oct2018.sat.r, us.shp)
+plot(July_Oct2018.sat.r)
+plot(us.shp, add = TRUE)
 ```
 
+###Time-analysis: NO2 changes during the COVID-19 pandemic.
+####US time analysis. 
+```{r, eval = TRUE}
+#read in tif files
+#get averages for all 6 date ranges
+#get confidence intervals and use box and whiskers plot 
 
+US_NO2_change <- function(x) {
+  r.vals <- raster::extract(paste0("./US_NO2_Comparison/", (x)), us.shp)
+  lapply(r.vals, FUN=mean, na.rm = TRUE)
+}
+US_NO2_change("US_NO2_2019-01-19_start.tif")
+
+US_NO2_change <- function(x, y) {
+  r1 <- raster(paste0("./US_NO2_Comparison/", (x))) %>% flip(direction='y')
+  r1 <- crop(r1, extent(us.shp))
+  mask(r1, us.shp)
+  r2 <- raster(paste0("./US_NO2_Comparison/", (y))) %>% flip(direction='y')
+  r2 <- crop(r2, extent(us.shp))
+  mask(r2, us.shp)
+  s <- stack(r1, r2)
+  names(s) <- c('2019Jan-Mar', '2019Mar-May')
+  boxplot(s, col=c('red', 'blue'), main='NO2 Before and After COVID-19', ylab='Date' )
+}
+US_NO2_change("US_NO2_2019-01-19_start.tif", "US_NO2_2019-03-19_start.tif")
+
+US_NO2_change <- function(x, y) {
+  r1 <- raster(paste0("./US_NO2_Comparison/", (x))) %>% flip(direction='y')
+  r1 <- crop(r1, extent(us.shp))
+  mask(r1, us.shp)
+  r2 <- raster(paste0("./US_NO2_Comparison/", (y))) %>% flip(direction='y')
+  r2 <- crop(r2, extent(us.shp))
+  mask(r2, us.shp)
+  s <- stack(r1, r2)
+  names(s) <- c('2020Jan-Mar', '2020Mar-May')
+  boxplot(s, col=c('red', 'blue'), main='NO2 Before and After COVID-19', ylab='Date' )
+}
+US_NO2_change("US_NO2_2020-01-19_start.tif", "US_NO2_2020-03-19_start.tif")
+
+US_NO2_change <- function(x, y) {
+  r1 <- raster(paste0("./US_NO2_Comparison/", (x))) %>% flip(direction='y')
+  r1 <- crop(r1, extent(us.shp))
+  mask(r1, us.shp)
+  r2 <- raster(paste0("./US_NO2_Comparison/", (y))) %>% flip(direction='y')
+  r2 <- crop(r2, extent(us.shp))
+  mask(r2, us.shp)
+  s <- stack(r1, r2)
+  names(s) <- c('2021Jan-Mar', '2021Mar-May')
+  boxplot(s, col=c('red', 'blue'), main='NO2 Before and After COVID-19', ylab='Date' )
+}
+US_NO2_change("US_NO2_2021-01-19_start.tif", "US_NO2_2021-03-19_start.tif")
+
+
+US_NO2_change <- function(x) {
+  r <- raster(paste0("./US_NO2_Comparison/", (x))) %>% flip(direction='y')
+  r <- crop(r, extent(us.shp))
+  mask(r, us.shp)
+}
+
+x <- US_NO2_change("US_NO2_2019-01-19_start.tif")
+boxplot(x)
+
+```
