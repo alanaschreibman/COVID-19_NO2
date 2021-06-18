@@ -26,8 +26,10 @@ library(dplyr)
 library(sp)
 library(sf)
 library(rgdal)
+library(beanplot)
 ```
 
+###Merging NO2 values for US with COVID data to make final data frame. 
 ```{r, eval = TRUE}
 #Reading in US data from Earth Engine. 
 continental.US.NO2 <- raster('continental_us.tif') %>%
@@ -85,7 +87,7 @@ plot(wrld_simpl, add = TRUE)
 ####Formatting sattelite and ground data. 
 ```{r, eval = TRUE}
 #Getting satellite data specifically for this time frame. 
-July_Oct2018.sat.r <- raster('July2018-Oct2018.tif') %>%
+July_Oct2018.sat.r <- raster('US_NO2_2018-07-01_start.tif') %>%
   flip(direction='y')
 July_Oct2018.sat.r <- crop(July_Oct2018.sat.r, extent(us.shp))
 July_Oct2018.sat.r <- mask(July_Oct2018.sat.r, us.shp)
@@ -140,7 +142,7 @@ cor(values(July_Oct2018.sat.r.re),
     values(July_Oct2018.ground.r),
     use = "na.or.complete")
 
-#Linaer model estimation. 
+#Linear model estimation. 
 lm1 <- lm(values(July_Oct2018.sat.r.re) ~ values(July_Oct2018.ground.r))
 summary(lm1)
 
@@ -164,6 +166,20 @@ focal_cor <- focal(
   overwrite = TRUE
 )
 ```
+
+####Plotting satellite vs ground data. 
+```{r, eval = TRUE}
+ggplot() +
+    geom_raster(data = July_Oct2018.sat , aes(x = longitude, y = latitude, fill = NO2_Concentration)) +
+    scale_fill_viridis_c() +
+    coord_quickmap()
+
+ggplot() +
+    geom_raster(data = July_Oct2018.ground , aes(x = Longitude, y =Latitude, fill = no2_estimate)) +
+    scale_fill_viridis_c() +
+    coord_quickmap()
+```
+
 ###Correlation analysis: China, satellite vs. ground data. 
 ####Formatting sattelite and ground data to be used for correlation analysis (China only). 
 ```{r, eval = TRUE}
@@ -185,13 +201,16 @@ plot(us.shp, add = TRUE)
 #get averages for all 6 date ranges
 #get confidence intervals and use box and whiskers plot 
 
-US_NO2_change <- function(x) {
-  r.vals <- raster::extract(paste0("./US_NO2_Comparison/", (x)), us.shp)
-  lapply(r.vals, FUN=mean, na.rm = TRUE)
+#Function for finding averages over each time period. 
+US_NO2_average <- function(x) {
+  r <- raster(paste0("./US_NO2_Comparison/", (x))) %>% flip(direction='y')
+  r.vals <- raster::extract(r, us.shp)
+  lapply(r.vals, FUN=median, na.rm = TRUE)
 }
-US_NO2_change("US_NO2_2019-01-19_start.tif")
+US_NO2_average("US_NO2_2019-03-19_start.tif")
 
-US_NO2_change <- function(x, y) {
+#Boxplots: not sure why post-COVID is higher median in each case. Need to adjust for degrees of urbanization? 
+US_2019_change <- function(x, y) {
   r1 <- raster(paste0("./US_NO2_Comparison/", (x))) %>% flip(direction='y')
   r1 <- crop(r1, extent(us.shp))
   mask(r1, us.shp)
@@ -200,11 +219,14 @@ US_NO2_change <- function(x, y) {
   mask(r2, us.shp)
   s <- stack(r1, r2)
   names(s) <- c('2019Jan-Mar', '2019Mar-May')
-  boxplot(s, col=c('red', 'blue'), main='NO2 Before and After COVID-19', ylab='Date' )
+  boxplot(s, col=c('red', 'blue'), 
+          main='NO2 Before and After COVID-19', 
+          ylab='Date',
+          names = c('2020 Jan-Mar', '2020 Mar-May'))
 }
-US_NO2_change("US_NO2_2019-01-19_start.tif", "US_NO2_2019-03-19_start.tif")
+US_2019_change("US_NO2_2019-01-19_start.tif", "US_NO2_2019-03-19_start.tif")
 
-US_NO2_change <- function(x, y) {
+US_2020_change <- function(x, y) {
   r1 <- raster(paste0("./US_NO2_Comparison/", (x))) %>% flip(direction='y')
   r1 <- crop(r1, extent(us.shp))
   mask(r1, us.shp)
@@ -212,12 +234,14 @@ US_NO2_change <- function(x, y) {
   r2 <- crop(r2, extent(us.shp))
   mask(r2, us.shp)
   s <- stack(r1, r2)
-  names(s) <- c('2020Jan-Mar', '2020Mar-May')
-  boxplot(s, col=c('red', 'blue'), main='NO2 Before and After COVID-19', ylab='Date' )
+  boxplot(s, col=c('red', 'blue'), 
+          main='NO2 Before and After COVID-19', 
+          ylab='Date',
+          names = c('2020 Jan-Mar', '2020 Mar-May'))
 }
-US_NO2_change("US_NO2_2020-01-19_start.tif", "US_NO2_2020-03-19_start.tif")
+US_2020_change("US_NO2_2020-01-19_start.tif", "US_NO2_2020-03-19_start.tif")
 
-US_NO2_change <- function(x, y) {
+US_2021_change <- function(x, y) {
   r1 <- raster(paste0("./US_NO2_Comparison/", (x))) %>% flip(direction='y')
   r1 <- crop(r1, extent(us.shp))
   mask(r1, us.shp)
@@ -226,18 +250,10 @@ US_NO2_change <- function(x, y) {
   mask(r2, us.shp)
   s <- stack(r1, r2)
   names(s) <- c('2021Jan-Mar', '2021Mar-May')
-  boxplot(s, col=c('red', 'blue'), main='NO2 Before and After COVID-19', ylab='Date' )
+  boxplot(s, col=c('red', 'blue'), 
+          main='NO2 Before and After COVID-19', 
+          ylab='Date',
+          names = c('2020 Jan-Mar', '2020 Mar-May'))
 }
-US_NO2_change("US_NO2_2021-01-19_start.tif", "US_NO2_2021-03-19_start.tif")
-
-
-US_NO2_change <- function(x) {
-  r <- raster(paste0("./US_NO2_Comparison/", (x))) %>% flip(direction='y')
-  r <- crop(r, extent(us.shp))
-  mask(r, us.shp)
-}
-
-x <- US_NO2_change("US_NO2_2019-01-19_start.tif")
-boxplot(x)
-
+US_2021_change("US_NO2_2021-01-19_start.tif", "US_NO2_2021-03-19_start.tif")
 ```
