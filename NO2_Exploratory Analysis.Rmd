@@ -107,28 +107,13 @@ print(path)
 end_time <- Sys.time()
 end_time - start_time
 
-#Attempt to use cloud storage:
-image1 <- ee$ImageCollection("COPERNICUS/S5P/NRTI/L3_NO2")$filterDate('2018-06-26', '2020-06-26')$select("NO2_column_number_density") %>%
-   ee$ImageCollection$mean()
-geometry <- ee$Geometry$Rectangle(
-  coords = c(-170, 18, -56, 71),
-  crs = 'EPSG:4326',
-  scale = 30
-)
-NO2 <- ee_as_raster(
-  image = image1,
-  region = geometry,
-  via = "gcs",
-  container = "rgee_bucket"
-)
-
 #World data using cloud storage. Commands seem to work; problem is that only small regions can be downloaded at a time because there are too many pixels.
 image1 <- ee$ImageCollection("COPERNICUS/S5P/NRTI/L3_NO2")$filterDate('2018-07-01', '2018-10-01')$select("NO2_column_number_density") %>%
    ee$ImageCollection$mean()
 geometry <- ee$Geometry$Rectangle(
-  coords = c(-179, -89, 180, 90),
+  coords = c(-180, -90, 180, 83.57027),
   scale = 30,
-  crs = 'EPSG:4326'
+  crs = 'WGS84'
 )
 NO2.world <- ee_image_to_gcs(
   image = image1,
@@ -139,6 +124,24 @@ NO2.world <- ee_image_to_gcs(
 )
 NO2.world$start()
 ee_monitoring(NO2.world)
+
+#Continent data using cloud storage. 
+image1 <- ee$ImageCollection("COPERNICUS/S5P/NRTI/L3_NO2")$filterDate('2018-07-01', '2018-10-01')$select("NO2_column_number_density") %>%
+   ee$ImageCollection$mean()
+geometry <- ee$Geometry$Rectangle(
+  coords = c(-180, 5,-9, 90),
+  scale = 30,
+  crs = 'WGS84'
+)
+NO2.NorthAmerica <- ee_image_to_gcs(
+  image = image1,
+  region = geometry,
+  bucket = "rgee_bucket", 
+  fileFormat = "GEO_TIFF",
+  fileNamePrefix = "NO2_NorthAmerica_earthengine"
+)
+NO2.NorthAmerica$start()
+ee_monitoring(NO2.NorthAmerica)
 
 #Continental US only using cloud storage. 
 image1 <- ee$ImageCollection("COPERNICUS/S5P/NRTI/L3_NO2")$filterDate('2018-07-01', '2018-10-01')$select("NO2_column_number_density") %>%
@@ -153,7 +156,7 @@ NO2.continental.US <- ee_image_to_gcs(
   region = geometry,
   bucket = "rgee_bucket", 
   fileFormat = "GEO_TIFF",
-  fileNamePrefix = "NO2_earthengine2"
+  fileNamePrefix = "NO2_NorthAmerica"
 )
 NO2.continental.US$start()
 ee_monitoring(NO2.continental.US)
@@ -164,7 +167,7 @@ geometry <- ee$Geometry$Rectangle(
   scale = NULL,
   crs = 'EPSG:4326'
     )
-date.fxn <- function(date.start, date.end) {
+US.date.fxn <- function(date.start, date.end) {
   image1 <- ee$ImageCollection("COPERNICUS/S5P/NRTI/L3_NO2")$filterDate(date.start, date.end)$select("NO2_column_number_density") %>% ee$ImageCollection$mean()
   NO2.continental.US <- ee_image_to_gcs(
     image = image1,
@@ -178,20 +181,50 @@ date.fxn <- function(date.start, date.end) {
   return(c(output1, output2))
 } 
 
+#China only using cloud storage: making into function where dates are input. 
+geometry <- ee$Geometry$Rectangle(
+  coords = c(72, 17, 136, 54),
+  scale = NULL,
+  crs = 'EPSG:4326'
+    )
+China.date.fxn <- function(date.start, date.end) {
+  image1 <- ee$ImageCollection("COPERNICUS/S5P/NRTI/L3_NO2")$filterDate(date.start, date.end)$select("NO2_column_number_density") %>% ee$ImageCollection$mean()
+  NO2.China <- ee_image_to_gcs(
+    image = image1,
+    region = geometry,
+    bucket = "rgee_bucket", 
+    fileFormat = "GEO_TIFF",
+    fileNamePrefix = paste0("China_NO2_", (date.start), "_start")
+  )
+  output1 <- NO2.China$start()
+  output2 <- ee_monitoring(NO2.China)
+  return(c(output1, output2))
+} 
+
 #Applying function:
-#Go by first day of first lockdown order -> two months later. Then find time period of equivalent two-month length, starting before the lockdown. Apply this first to 2019, then 2020, then 2021. 
+US.date.fxn("2018-07-01", "2018-10-01") #Used for ground data to satellite comparison. 
+
+#Time analysis: Go by first day of first lockdown order -> two months later. Then find time period of equivalent two-month length, starting before the lockdown. Apply this first to 2019, then 2020, then 2021. 
 
 #United States: California on March 19th. 
-date.fxn("2018-07-01", "2018-10-01")
+US.date.fxn("2019-01-19", "2019-03-19") 
+US.date.fxn("2019-03-19", "2019-05-19") 
 
-date.fxn("2019-01-19", "2019-03-19") 
-date.fxn("2019-03-19", "2019-05-19") 
-
-date.fxn("2020-01-19", "2020-03-19") 
+US.date.fxn("2020-01-19", "2020-03-19") 
 date.fxn("2020-03-19", "2020-05-19") 
 
-date.fxn("2021-01-19", "2021-03-19") 
-date.fxn("2021-03-19", "2021-05-19") 
+US.date.fxn("2021-01-19", "2021-03-19") 
+US.date.fxn("2021-03-19", "2021-05-19") 
+
+#China: Hubei on Jan 23rd.
+China.date.fxn("2018-11-23", "2019-01-23")
+China.date.fxn("2019-01-23", "2019-03-23")
+
+China.date.fxn("2019-11-23", "2020-01-23")
+China.date.fxn("2020-01-23", "2020-03-23")
+
+China.date.fxn("2020-11-23", "2021-01-23")
+China.date.fxn("2021-01-23", "2021-03-23")
 ```
 
 ###Mapping data with Earth Engine interactive maps. 

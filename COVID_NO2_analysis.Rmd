@@ -22,6 +22,7 @@ knitr::opts_chunk$set(warning = FALSE, message = FALSE)
 library(raster)
 library(maptools)
 library(ggplot2)
+library(cowplot)
 library(dplyr)
 library(sp)
 library(sf)
@@ -32,15 +33,9 @@ library(beanplot)
 ###Merging NO2 values for US with COVID data to make final data frame. 
 ```{r, eval = TRUE}
 #Reading in US data from Earth Engine. 
-continental.US.NO2 <- raster('continental_us.tif') %>%
+continental.US.NO2.r <- raster('continental_us.tif') %>%
   flip(direction='y')
-plot(continental.US.NO2)
-
-#Getting rectangle into data frame form for later use (will use inner_join to match coordinates from rectangle with NO2 concentrations from below).
-rectangle <- rasterToPoints(continental.US.NO2) %>%
-  as.data.frame() 
-names(rectangle)[3] <- "NO2_Concentration"
-rectangle
+plot(continental.US.NO2.r)
 
 #Reading in shapefile and filtering for US only.
 data(wrld_simpl)
@@ -49,16 +44,17 @@ us.shp <- wrld_simpl[wrld_simpl$NAME=="United States", ]
 plot(us.shp)
 
 #More exploration on raster NO2 file. 
-head(continental.US.NO2 )
-dim(continental.US.NO2 )
-plot(continental.US.NO2 )
+head(continental.US.NO2.r)
+dim(continental.US.NO2.r)
+plot(continental.US.NO2.r)
 plot(wrld_simpl[wrld_simpl$NAME=="United States", ], add = TRUE)
-str(continental.US.NO2 )
+str(continental.US.NO2.r)
 
 #Extracting mean NO2 values for US and adding to coordinates data to make final data frame.
-r.vals <- raster::extract(continental.US.NO2 , us.shp)
+r.vals <- raster::extract(continental.US.NO2.r, us.shp)
 r.mean <- lapply(r.vals, FUN=mean, na.rm = TRUE)
-final.df <- data.frame(us.shp@data, r.mean) 
+final.df <- data.frame(us.shp@data, r.mean)  
+rm(r.mean, r.vals)
 names(final.df)[12] <- "NO2_Concentration"
 names(final.df)[5] <- "location"
 head(final.df)
@@ -66,20 +62,66 @@ head(final.df)
 #Merged geospatial data set with COVID data (variables come from COVID exploratory analysis RMD file). 
 covid.NO2 <- merge(owid.filtered, final.df, by = "location")
 ```
+
 ###Reading in world satellite data. 
 ```{r, eval = TRUE}
 #Reading in US data from Earth Engine: attempt at world file unsuccessful (too large?). 
-world.NO2 <- raster('NO2_world.tif')
-world.NO2 <- raster('NO2_world_earthengine_2021_06_17_14_15_02.tif')
-str(world.NO2)
+world.NO2.r <- raster('NO2_world.tif') %>%
+  flip(direction='y')
+str(world.NO2.r)
 world.NO2.df <- rasterToPoints(world.NO2) %>%
   as.data.frame()
 world.NO2.df
-class(world.NO2)
-head(world.NO2)
-tail(world.NO2)
-dim(world.NO2)
-plot(world.NO2) #not showing all data points expected
+
+#Direct conversion from NO2 raster to data frame while filtering by shapefile. 
+world.fxn <- function(x) {
+  r1 <- raster(x) %>% flip(dilection='y')
+  r1 <- crop(r1, extent(wrld_simpl))
+  r1 <- mask(r1, wrld_simpl)
+  r1 <- rasterToPoints(r1, spatial = TRUE) 
+  world.sat <- data.frame(r1) %>% 
+      select(!("optional")) 
+  assign("world.sat", world.sat, .GlobalEnv)
+  world.sat
+}  #Final satellite data to use for comparison to EPA data. 
+world.fxn("NO2_world_earthengine_2021_06_18_13_30_49.tif")
+
+names(world.NO2.r)
+class(world.NO2.r)
+head(world.NO2.r)
+tail(world.NO2.r)
+dim(world.NO2.r)
+plot(world.NO2.r) #not showing all data points expected
+plot(wrld_simpl, add = TRUE)
+```
+
+###Reading in continent satellite data. 
+```{r, eval = TRUE}
+#Reading in North America data from Earth Engine.
+NorthAmerica.NO2.r <- raster('NO2_NorthAmerica.tif') %>%
+  flip(direction='y')
+str(world.NO2.r)
+NorthAmerica.NO2.df <- rasterToPoints(NorthAmerica.NO2.r) %>%
+  as.data.frame()
+NorthAmerica.NO2.df
+
+#Direct conversion from NO2 raster to data frame while filtering by shapefile. 
+NAmerica.fxn <- function(x) {
+  r1 <- raster(x) %>% flip(dilection='y')
+  r1 <- crop(r1, extent(wrld_simpl))
+  r1 <- mask(r1, wrld_simpl)
+  r1 <- rasterToPoints(r1, spatial = TRUE) 
+  world.sat <- data.frame(r1) %>% 
+      select(!("optional")) 
+  assign("world.sat", world.sat, .GlobalEnv)
+  world.sat
+}  #Final satellite data to use for comparison to EPA data. 
+world.fxn("NO2_world_earthengine_2021_06_18_13_30_49.tif")
+
+head(NorthAmerica.NO2.r)
+tail(NorthAmerica.NO2.r)
+dim(NorthAmerica.NO2.r)
+plot(NorthAmerica.NO2.r) #not showing all data points expected
 plot(wrld_simpl, add = TRUE)
 ```
 
@@ -91,46 +133,36 @@ July_Oct2018.sat.r <- raster('US_NO2_2018-07-01_start.tif') %>%
   flip(direction='y')
 July_Oct2018.sat.r <- crop(July_Oct2018.sat.r, extent(us.shp))
 July_Oct2018.sat.r <- mask(July_Oct2018.sat.r, us.shp)
-plot(July_Oct2018.sat.r)
-plot(us.shp, add = TRUE)
 
-#Getting rectangle into data frame for later comparison (will use inner_join to match coordinates from rectangle with NO2 concentrations from below). 
-rectangle.sat <- rasterToPoints(July_Oct2018.sat.r) %>%
-  as.data.frame()  
-rectangle.sat <- rectangle.sat %>% 
-  rename(c("longitude" = "x", "latitude" = "y")) 
-names(rectangle.sat)[3] <- "NO2_Concentration"
-rectangle.sat <- select(rectangle.sat, latitude, longitude, NO2_Concentration)
-rectangle.sat
-
-#Extracting NO2 values that overlap with US shapefile and using rectangle.sat to restore the coordinate data.  
-sat.r.vals <- raster::extract(July_Oct2018.sat.r, us.shp)
-NO2.sat.df <- as.data.frame(sat.r.vals, col.names = "NO2_Concentration")
-July_Oct2018.sat<- inner_join(rectangle.sat, NO2.sat.df, by = "NO2_Concentration") %>%
-  arrange(latitude) #Used later to compare satellite data to ground data. 
-July_Oct2018.sat #Final satellite data to use for comparison to EPA data. 
+#Direct conversion from NO2 raster to data frame while filtering by shapefile. 
+continental.US.fxn <- function(x) {
+  r1 <- raster(x) %>% flip(direction='y')
+  r1 <- crop(r1, extent(us.shp))
+  r1 <- mask(r1, us.shp)
+  r1 <- rasterToPoints(r1, spatial = TRUE) 
+  July_Oct2018.sat <- data.frame(r1) %>% 
+      select(!("optional")) %>%
+      select( "y", "x", "US_NO2_2018.07.01_start")
+  July_Oct2018.sat <- rename(July_Oct2018.sat, Latitude = y, Longitude = x, NO2_concentration = US_NO2_2018.07.01_start)
+  assign("July_Oct2018.sat", July_Oct2018.sat, .GlobalEnv)
+  July_Oct2018.sat
+}  #Final satellite data to use for comparison to EPA data. 
+continental.US.fxn("US_NO2_2018-07-01_start.tif")
 
 #Selecting just latitude and longitude from data frame just made to use with Pargasite retrieval. 
-US.lat.lon <- July_Oct2018.sat %>% select(c(latitude, longitude))
+US.lat.lon <- July_Oct2018.sat %>% select(c(Latitude, Longitude))
 write.csv(US.lat.lon, file.path("US_ground_NO2", "US_lat_lon.csv"), row.names = FALSE) #Used to gather EPA data from Pargasite. 
 
 #Reading in EPA data
 #Problem w Pargasite: only overlapping time frame is July 2018 - October 2018 (Pargasite stops working in November 2018)
-July_Oct2018.ground <- read.csv(file = './US_ground_NO2/July_Oct2018NO2.csv') %>% select(c("Latitude", "Longitude", "no2_estimate"))
+July_Oct2018.ground <- read.csv(file = './US_ground_NO2/July_Oct2018NO2.csv') %>% select(c("Latitude", "Longitude", "no2_estimate")) %>% rename(NO2_concentration = no2_estimate)
+July_Oct2018.ground <- data.frame(July_Oct2018.ground)
 July_Oct2018.ground #Final EPA data to use in comparison to satellite data. 
 
 #EPA data frame changed to raster format.
-library(sp)
-library(rgdal)
-coordinates(July_Oct2018.ground)=~Longitude+Latitude
-proj4string(July_Oct2018.ground)=CRS("+init=epsg:4326") # set it to lat-long
-July_Oct2018.ground.r = spTransform(July_Oct2018.ground,CRS("+init=epsg:4326"))
-gridded(July_Oct2018.ground.r) = TRUE
-July_Oct2018.ground.r = raster(July_Oct2018.ground.r)
-projection(July_Oct2018.ground.r) = CRS("+init=epsg:4326")
-plot(July_Oct2018.ground.r)
-writeRaster(July_Oct2018.ground.r,"July_Oct2018.ground.r.tif") #Saves as geoTIFF file. 
+July_Oct2018.ground.r <- July_Oct2018.ground %>% select(c("Longitude", "Latitude", "NO2_concentration")) %>% rasterFromXYZ() 
 ```
+
 ####Checking for satellite data correlation to ground data.
 ```{r, eval = TRUE}
 #Resampling raster data to be same size for comparisons. 
@@ -170,13 +202,17 @@ focal_cor <- focal(
 ####Plotting satellite vs ground data. 
 ```{r, eval = TRUE}
 ggplot() +
-    geom_raster(data = July_Oct2018.sat , aes(x = longitude, y = latitude, fill = NO2_Concentration)) +
+    geom_raster(data = July_Oct2018.sat, aes(x = Longitude, y = Latitude, fill = NO2_concentration)) +
     scale_fill_viridis_c() +
+    ggtitle("NO2 US Satellite Data, July-Oct 2018") + 
+    labs(fill = "NO2 Concentration \n(mol/m^2)") +
     coord_quickmap()
 
 ggplot() +
-    geom_raster(data = July_Oct2018.ground , aes(x = Longitude, y =Latitude, fill = no2_estimate)) +
+    geom_raster(data = July_Oct2018.ground, aes(x = Longitude, y = Latitude, fill = NO2_concentration)) +
     scale_fill_viridis_c() +
+    ggtitle("NO2 US EPA Ground Data, July-Oct 2018") + 
+    labs(fill = "NO2 Concentration \n(ppb)") +
     coord_quickmap()
 ```
 
@@ -195,19 +231,71 @@ plot(us.shp, add = TRUE)
 ```
 
 ###Time-analysis: NO2 changes during the COVID-19 pandemic.
-####US time analysis. 
+####US time analysis plots. 
 ```{r, eval = TRUE}
-#read in tif files
-#get averages for all 6 date ranges
-#get confidence intervals and use box and whiskers plot 
+#Converting before lockdown and after lockdown rasters for US to data frames.  
+before.lockdown <- raster('./US_NO2_comparison/US_NO2_2020-01-19_start.tif') %>%
+  flip(direction='y') %>%
+  rasterToPoints(spatial = TRUE) %>%
+  data.frame() 
+before.lockdown <- before.lockdown %>%
+  rename(c(NO2_concentration = US_NO2_2020.01.19_start, Longitude = x, Latitude = y)) %>%
+  select(c("Latitude", "Longitude", "NO2_concentration"))
+
+after.lockdown <- raster('./US_NO2_comparison/US_NO2_2020-03-19_start.tif') %>%
+  flip(direction='y') %>%
+  rasterToPoints(spatial = TRUE) %>%
+  data.frame() 
+after.lockdown <- after.lockdown %>%
+  rename(c(NO2_concentration = US_NO2_2020.03.19_start, Longitude = x, Latitude = y)) %>%
+  select(c("Latitude", "Longitude", "NO2_concentration"))
+
+#Plotting before and after maps. 
+p1 <- ggplot() +
+  geom_raster(data = before.lockdown , aes(x = Longitude, y = Latitude, fill = NO2_concentration)) + 
+  geom_polygon(data = us.shp, aes(x = long, y = lat, group = group), colour = "black", fill = NA) +
+  coord_quickmap(
+    xlim = c(-123, -65),
+    ylim = c(23, 49)
+  ) + 
+  labs(fill = "NO2 Concentration \n(mol/m^2)") +
+  scale_fill_viridis_c(limits = c(0, 0.00015)) +
+  ggtitle("US NO2 Concentrations (Sentinel Satellite) Before COVID-19 Lockdown")
+  
+p2 <- ggplot() +
+  geom_raster(data = after.lockdown , aes(x = Longitude, y = Latitude, fill = NO2_concentration)) + 
+  geom_polygon(data = us.shp, aes(x = long, y = lat, group = group), colour = "black", fill = NA) +
+  coord_quickmap(
+    xlim = c(-123, -65),
+    ylim = c(23, 49)
+  ) + 
+  labs(fill = "NO2 Concentration \n(mol/m^2)") +
+  scale_fill_viridis_c(limits = c(0, 0.00015)) +
+  ggtitle("US NO2 Concentrations (Sentinel Satellite) After COVID-19 Lockdown")
+
+plot_grid(p1, p2, labels = "AUTO", ncol = 1)
+rm(p1, p2)
+```
+
+###US time analysis.
+```{r, eval = TRUE}
+#Function for finding medians over each time period. 
+US_NO2_median <- function(x) {
+  r <- raster(paste0("./US_NO2_Comparison/", (x))) %>% flip(direction='y')
+  r.vals <- raster::extract(r, us.shp)
+  lapply(r.vals, FUN=median, na.rm = TRUE)
+}
+US_NO2_median("US_NO2_2020-01-19_start.tif")
+US_NO2_median("US_NO2_2020-03-19_start.tif")
 
 #Function for finding averages over each time period. 
 US_NO2_average <- function(x) {
   r <- raster(paste0("./US_NO2_Comparison/", (x))) %>% flip(direction='y')
   r.vals <- raster::extract(r, us.shp)
-  lapply(r.vals, FUN=median, na.rm = TRUE)
+  lapply(r.vals, FUN=mean, na.rm = TRUE)
 }
-US_NO2_average("US_NO2_2019-03-19_start.tif")
+US_NO2_average("US_NO2_2020-01-19_start.tif")
+US_NO2_average("US_NO2_2020-03-19_start.tif")
 
 #Boxplots: not sure why post-COVID is higher median in each case. Need to adjust for degrees of urbanization? 
 US_2019_change <- function(x, y) {
@@ -218,11 +306,10 @@ US_2019_change <- function(x, y) {
   r2 <- crop(r2, extent(us.shp))
   mask(r2, us.shp)
   s <- stack(r1, r2)
-  names(s) <- c('2019Jan-Mar', '2019Mar-May')
   boxplot(s, col=c('red', 'blue'), 
           main='NO2 Before and After COVID-19', 
           ylab='Date',
-          names = c('2020 Jan-Mar', '2020 Mar-May'))
+          names = c('2019 Jan-Mar', '2019 Mar-May'))
 }
 US_2019_change("US_NO2_2019-01-19_start.tif", "US_NO2_2019-03-19_start.tif")
 
@@ -249,11 +336,119 @@ US_2021_change <- function(x, y) {
   r2 <- crop(r2, extent(us.shp))
   mask(r2, us.shp)
   s <- stack(r1, r2)
-  names(s) <- c('2021Jan-Mar', '2021Mar-May')
+  boxplot(s, col=c('red', 'blue'), 
+          main='NO2 Before and After COVID-19', 
+          ylab='Date',
+          names = c('2021 Jan-Mar', '2021 Mar-May'))
+}
+US_2021_change("US_NO2_2021-01-19_start.tif", "US_NO2_2021-03-19_start.tif")
+```
+
+####China time analysis plots. 
+```{r, eval = TRUE}
+China.shp <- wrld_simpl[wrld_simpl$NAME=="China", ]
+
+#Converting before lockdown and after lockdown rasters for US to data frames.  
+before.lockdown <- raster('./China_NO2_comparison/China_NO2_2019-11-23_start.tif') %>%
+  flip(direction='y') %>%
+  rasterToPoints(spatial = TRUE) %>%
+  data.frame() 
+before.lockdown <- before.lockdown %>%
+  rename(c(NO2_concentration = China_NO2_2019.11.23_start, Longitude = x, Latitude = y)) %>%
+  select(c("Latitude", "Longitude", "NO2_concentration"))
+
+after.lockdown <- raster('./China_NO2_comparison/China_NO2_2020-01-23_start.tif') %>%
+  flip(direction='y') %>%
+  rasterToPoints(spatial = TRUE) %>%
+  data.frame() 
+after.lockdown <- after.lockdown %>%
+  rename(c(NO2_concentration = China_NO2_2020.01.23_start, Longitude = x, Latitude = y)) %>%
+  select(c("Latitude", "Longitude", "NO2_concentration"))
+
+#Plotting before and after maps. 
+p1 <- ggplot() +
+  geom_raster(data = before.lockdown , aes(x = Longitude, y = Latitude, fill = NO2_concentration)) + 
+  geom_polygon(data = China.shp, aes(x = long, y = lat, group = group), colour = "black", fill = NA) +
+  coord_quickmap() +
+  labs(fill = "NO2 Concentration \n(mol/m^2)") +
+  scale_fill_viridis_c(limits = c(0, 0.0005)) +
+  ggtitle("China NO2 Concentrations (Sentinel Satellite) Before COVID-19 Lockdown")
+  
+p2 <- ggplot() +
+  geom_raster(data = after.lockdown , aes(x = Longitude, y = Latitude, fill = NO2_concentration)) + 
+  geom_polygon(data = China.shp, aes(x = long, y = lat, group = group), colour = "black", fill = NA) +
+  coord_quickmap() +
+  labs(fill = "NO2 Concentration \n(mol/m^2)") +
+  scale_fill_viridis_c(limits = c(0, 0.0005)) +
+  ggtitle("China NO2 Concentrations (Sentinel Satellite) After COVID-19 Lockdown")
+
+plot_grid(p1, p2, labels = "AUTO", ncol = 1)
+rm(p1, p2)
+```
+
+###China time analysis.
+```{r, eval = TRUE}
+#Function for finding medians over each time period. 
+US_NO2_median <- function(x) {
+  r <- raster(paste0("./US_NO2_Comparison/", (x))) %>% flip(direction='y')
+  r.vals <- raster::extract(r, us.shp)
+  lapply(r.vals, FUN=median, na.rm = TRUE)
+}
+US_NO2_median("US_NO2_2020-01-19_start.tif")
+US_NO2_median("US_NO2_2020-03-19_start.tif")
+
+#Function for finding averages over each time period. 
+US_NO2_average <- function(x) {
+  r <- raster(paste0("./US_NO2_Comparison/", (x))) %>% flip(direction='y')
+  r.vals <- raster::extract(r, us.shp)
+  lapply(r.vals, FUN=mean, na.rm = TRUE)
+}
+US_NO2_average("US_NO2_2020-01-19_start.tif")
+US_NO2_average("US_NO2_2020-03-19_start.tif")
+
+#Boxplots: not sure why post-COVID is higher median in each case. Need to adjust for degrees of urbanization? 
+US_2019_change <- function(x, y) {
+  r1 <- raster(paste0("./US_NO2_Comparison/", (x))) %>% flip(direction='y')
+  r1 <- crop(r1, extent(us.shp))
+  mask(r1, us.shp)
+  r2 <- raster(paste0("./US_NO2_Comparison/", (y))) %>% flip(direction='y')
+  r2 <- crop(r2, extent(us.shp))
+  mask(r2, us.shp)
+  s <- stack(r1, r2)
+  boxplot(s, col=c('red', 'blue'), 
+          main='NO2 Before and After COVID-19', 
+          ylab='Date',
+          names = c('2019 Jan-Mar', '2019 Mar-May'))
+}
+US_2019_change("US_NO2_2019-01-19_start.tif", "US_NO2_2019-03-19_start.tif")
+
+US_2020_change <- function(x, y) {
+  r1 <- raster(paste0("./US_NO2_Comparison/", (x))) %>% flip(direction='y')
+  r1 <- crop(r1, extent(us.shp))
+  mask(r1, us.shp)
+  r2 <- raster(paste0("./US_NO2_Comparison/", (y))) %>% flip(direction='y')
+  r2 <- crop(r2, extent(us.shp))
+  mask(r2, us.shp)
+  s <- stack(r1, r2)
   boxplot(s, col=c('red', 'blue'), 
           main='NO2 Before and After COVID-19', 
           ylab='Date',
           names = c('2020 Jan-Mar', '2020 Mar-May'))
+}
+US_2020_change("US_NO2_2020-01-19_start.tif", "US_NO2_2020-03-19_start.tif")
+
+US_2021_change <- function(x, y) {
+  r1 <- raster(paste0("./US_NO2_Comparison/", (x))) %>% flip(direction='y')
+  r1 <- crop(r1, extent(us.shp))
+  mask(r1, us.shp)
+  r2 <- raster(paste0("./US_NO2_Comparison/", (y))) %>% flip(direction='y')
+  r2 <- crop(r2, extent(us.shp))
+  mask(r2, us.shp)
+  s <- stack(r1, r2)
+  boxplot(s, col=c('red', 'blue'), 
+          main='NO2 Before and After COVID-19', 
+          ylab='Date',
+          names = c('2021 Jan-Mar', '2021 Mar-May'))
 }
 US_2021_change("US_NO2_2021-01-19_start.tif", "US_NO2_2021-03-19_start.tif")
 ```
