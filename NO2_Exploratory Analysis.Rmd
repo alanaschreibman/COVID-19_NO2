@@ -143,23 +143,35 @@ NO2.NorthAmerica <- ee_image_to_gcs(
 NO2.NorthAmerica$start()
 ee_monitoring(NO2.NorthAmerica)
 
-#Continental US only using cloud storage. 
-image1 <- ee$ImageCollection("COPERNICUS/S5P/NRTI/L3_NO2")$filterDate('2018-07-01', '2018-10-01')$select("NO2_column_number_density") %>%
-   ee$ImageCollection$mean()
-geometry <- ee$Geometry$Rectangle(
-  coords = c(-130, 23, -65, 49),
-  scale = 30,
+#All countries using cloud storage: making into function where coordinates are input. 
+countries.NO2.fxn <- function(minx, miny, maxx, maxy, country) {
+  image1 <- ee$ImageCollection("COPERNICUS/S5P/NRTI/L3_NO2")$filterDate('2018-07-10', '2019-07-10')$select("NO2_column_number_density") %>% ee$ImageCollection$mean()
+  geometry <- ee$Geometry$Rectangle(
+  coords = c(minx, miny, maxx, maxy),
+  scale = NULL,
   crs = 'EPSG:4326'
-)
-NO2.continental.US <- ee_image_to_gcs(
-  image = image1,
-  region = geometry,
-  bucket = "rgee_bucket", 
-  fileFormat = "GEO_TIFF",
-  fileNamePrefix = "NO2_NorthAmerica"
-)
-NO2.continental.US$start()
-ee_monitoring(NO2.continental.US)
+    )
+  NO2.world.countries <- ee_image_to_gcs(
+    image = image1,
+    region = geometry,
+    bucket = "rgee_bucket", 
+    fileFormat = "GEO_TIFF",
+    fileNamePrefix = paste0((country), "_NO2")
+  )
+  output1 <- NO2.world.countries$start()
+  output2 <- ee_monitoring(NO2.world.countries)
+  return(c(output1, output2))
+} 
+countries.NO2.fxn(-180, 19, -66, 71.5, "United States")
+countries.NO2.fxn(72, 17, 136, 54, "China")
+countries.NO2.fxn(68,  7, 97, 36, "India")
+countries.NO2.fxn(6,  36, 19, 48, "Italy")
+countries.NO2.fxn(-74,.5 -33, -30, 6, "Brazil")
+countries.NO2.fxn(-81.5, -18, -69, 0, "Peru")
+countries.NO2.fxn(34, 29, 35, 34, "Israel")
+countries.NO2.fxn(-74, -55.5, -54, -20, "Argentina")
+countries.NO2.fxn(-180, 42, 180, 82, "Russia")
+countries.NO2.fxn(-9, 49, 2, 61, "United Kingdom")
 
 #US only using cloud storage: making into function where dates are input. 
 geometry <- ee$Geometry$Rectangle(

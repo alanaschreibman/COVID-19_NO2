@@ -28,9 +28,11 @@ library(sp)
 library(sf)
 library(rgdal)
 library(beanplot)
+library(stringr)
 ```
 
-###Merging NO2 values for US with COVID data to make final data frame. 
+###Merging NO2 data with COVID data for analysis.  
+####United States data.  
 ```{r, eval = TRUE}
 #Reading in US data from Earth Engine. 
 continental.US.NO2.r <- raster('continental_us.tif') %>%
@@ -39,9 +41,12 @@ plot(continental.US.NO2.r)
 
 #Reading in shapefile and filtering for US only.
 data(wrld_simpl)
+wrld_simpl@data[["NAME"]]
 plot(wrld_simpl) 
 us.shp <- wrld_simpl[wrld_simpl$NAME=="United States", ]
 plot(us.shp)
+
+wrld_simpl[wrld_simpl$NAME=="Israel", ]
 
 #More exploration on raster NO2 file. 
 head(continental.US.NO2.r)
@@ -61,6 +66,96 @@ head(final.df)
 
 #Merged geospatial data set with COVID data (variables come from COVID exploratory analysis RMD file). 
 covid.NO2 <- merge(owid.filtered, final.df, by = "location")
+```
+
+####Formatting data for selected 10 countries. 
+```{r, eval = TRUE}
+#Reading in US data from Earth Engine. 
+UnitedStates.NO2.r <- raster('./COVID_comparison/United States_NO2.tif') %>%
+  flip(direction='y')
+China.NO2.r <- raster('./COVID_comparison/China_NO2.tif') %>%
+  flip(direction='y')
+India.NO2.r <- raster('./COVID_comparison/India_NO2.tif') %>%
+  flip(direction='y')
+Italy.NO2.r <- raster('./COVID_comparison/Italy_NO2.tif') %>%
+  flip(direction='y')
+Brazil.NO2.r <- raster('./COVID_comparison/Brazil_NO2.tif') %>%
+  flip(direction='y')
+Peru.NO2.r <- raster('./COVID_comparison/Peru_NO2.tif') %>%
+  flip(direction='y')
+Israel.NO2.r <- raster('./COVID_comparison/Israel_NO2.tif') %>%
+  flip(direction='y')
+Argentina.NO2.r <- raster('./COVID_comparison/Argentina_NO2.tif') %>%
+  flip(direction='y')
+Russia.NO2.r <- raster('./COVID_comparison/Russia_NO2.tif') %>%
+  flip(direction='y')
+UnitedKingdom.NO2.r <- raster('./COVID_comparison/United Kingdom_NO2.tif') %>%
+  flip(direction='y')
+
+#Shapefiles for 10 countries with high COVID cases. 
+countries.shp.fxn <- function(x) {
+  wrld_simpl[wrld_simpl$NAME==x, ]
+}
+for(i in c("United States", "China", "India", "Italy", "Brazil", "Peru", "Israel", "Argentina", "Russia", "United Kingdom")) {  
+  assign(paste0(i, ".shp"), countries.shp.fxn(i)) 
+}
+
+#Extracting mean NO2 values and adding to coordinates data to make final data frame. Then, merge geospatial data set with COVID data (variables come from COVID exploratory analysis RMD file). 
+mean.NO2.fxn <- function(raster, shp, country) {
+  r.vals <- raster::extract(raster, shp)
+  r.mean <- lapply(r.vals, FUN=mean, na.rm = TRUE)
+  final.df <- data.frame(shp@data, r.mean)  
+  names(final.df)[12] <- "NO2_Concentration" #Average NO2 concentration in mol/m^2 from July 10 2018 to July 10 2019. 
+  names(final.df)[5] <- "location"
+  final.df <- merge(owid.filtered, final.df, by = "location")
+  assign(paste0(country, ".df"), final.df, .GlobalEnv)
+}
+mean.NO2.fxn(UnitedStates.NO2.r, `United States.shp`, "UnitedStates")
+mean.NO2.fxn(China.NO2.r, `China.shp`, "China")
+mean.NO2.fxn(India.NO2.r, `India.shp`, "India")
+mean.NO2.fxn(Italy.NO2.r, `Italy.shp`, "Italy")
+mean.NO2.fxn(Brazil.NO2.r, `Brazil.shp`, "Brazil")
+mean.NO2.fxn(Peru.NO2.r, `Peru.shp`, "Peru")
+mean.NO2.fxn(Israel.NO2.r, `Israel.shp`, "Israel")
+mean.NO2.fxn(Argentina.NO2.r, `Argentina.shp`, "Argentina")
+mean.NO2.fxn(Russia.NO2.r, `Russia.shp`, "Russia")
+mean.NO2.fxn(UnitedKingdom.NO2.r, `United Kingdom.shp`, "UnitedKingdom")
+
+COVID_NO2.df <- Reduce(function(...) merge(..., all=TRUE), list(UnitedStates.df, China.df, India.df, Italy.df, Brazil.df, Peru.df, Israel.df, Argentina.df, Russia.df, UnitedKingdom.df)) #Joins rows into one data frame. 
+
+#Fix for loop later. 
+for(i in c("UnitedStates.NO2.r", "China.NO2.r", "India.NO2.r", "Italy.NO2.r", "Brazil.NO2.r", "Peru.NO2.r", "Israel.NO2.r", "Argentina.NO2.r", "Russia.NO2.r", "UnitedKingdom.NO2.r")) { 
+  for(j in c("United States.shp", "China.shp", "India.shp", "Italy.shp", "Brazil.shp", "Peru.shp", "Israel.shp", "Argentina.shp", "Russia.shp", "United Kingdom.shp")) {
+    for (k in c("UnitedStates", "China", "India", "Italy", "Brazil", "Peru", "Israel", "Argentina", "Russia", "UnitedKingdom")) {
+    print(mean.NO2.fxn(i, j, k))
+    }
+  }
+}
+```
+
+####Analysis for selected 10 countries. 
+```{r, eval = TRUE}
+#NO2 concentration vs COVID cases. 
+ggplot(data = COVID_NO2.df, aes(x = NO2_Concentration, y = totcases.mil)) +
+  geom_point(color = "#333aff", alpha = 1) +
+  geom_smooth(color = "red") +
+  theme_bw() +
+  labs(x = "NO2 Concentration (mol/m^2)", y = "Total COVID-19 Cases per Million People") +
+  labs(title = "World COVID-19 Cases per Million People vs. NO2 Concentration") 
+cor(COVID_NO2.df$totcases.mil, COVID_NO2.df$NO2_Concentration, use = "complete.obs") 
+NO2.lm.cases <- lm(totcases.mil ~ NO2_Concentration + gdp.cap + pop.density + med.age, data = COVID_NO2.df)
+summary.lm(NO2.lm.cases) #Summary statistics for linear fit. 
+
+#NO2 concentration vs COVID deaths. 
+ggplot(data = COVID_NO2.df, aes(x = NO2_Concentration, y = totdeaths.mil)) +
+  geom_point(color = "#333aff", alpha = 1) +
+  geom_smooth(color = "red") +
+  theme_bw() +
+  labs(x = "NO2 Concentration (mol/m^2)", y = "Total COVID-19 Deaths per Million People") +
+  labs(title = "World COVID-19 Deaths per Million People vs. NO2 Concentration") 
+cor(COVID_NO2.df$totdeaths.mil, COVID_NO2.df$NO2_Concentration, use = "complete.obs") 
+NO2.lm.cases <- lm(totdeaths.mil ~ NO2_Concentration + gdp.cap  + pop.density + med.age, data = COVID_NO2.df)
+summary.lm(NO2.lm.cases) #Summary statistics for linear fit. 
 ```
 
 ###Reading in world satellite data. 
@@ -307,7 +402,7 @@ US_2019_change <- function(x, y) {
   mask(r2, us.shp)
   s <- stack(r1, r2)
   boxplot(s, col=c('red', 'blue'), 
-          main='NO2 Before and After COVID-19', 
+          main='US NO2: 2019 Seasonal Change', 
           ylab='Date',
           names = c('2019 Jan-Mar', '2019 Mar-May'))
 }
@@ -322,7 +417,7 @@ US_2020_change <- function(x, y) {
   mask(r2, us.shp)
   s <- stack(r1, r2)
   boxplot(s, col=c('red', 'blue'), 
-          main='NO2 Before and After COVID-19', 
+          main='US NO2 Before and After COVID-19', 
           ylab='Date',
           names = c('2020 Jan-Mar', '2020 Mar-May'))
 }
@@ -337,7 +432,7 @@ US_2021_change <- function(x, y) {
   mask(r2, us.shp)
   s <- stack(r1, r2)
   boxplot(s, col=c('red', 'blue'), 
-          main='NO2 Before and After COVID-19', 
+          main='US NO2: 2021 Seasonal Change', 
           ylab='Date',
           names = c('2021 Jan-Mar', '2021 Mar-May'))
 }
@@ -389,66 +484,66 @@ rm(p1, p2)
 ###China time analysis.
 ```{r, eval = TRUE}
 #Function for finding medians over each time period. 
-US_NO2_median <- function(x) {
-  r <- raster(paste0("./US_NO2_Comparison/", (x))) %>% flip(direction='y')
-  r.vals <- raster::extract(r, us.shp)
+China_NO2_median <- function(x) {
+  r <- raster(paste0("./China_NO2_Comparison/", (x))) %>% flip(direction='y')
+  r.vals <- raster::extract(r, China.shp)
   lapply(r.vals, FUN=median, na.rm = TRUE)
 }
-US_NO2_median("US_NO2_2020-01-19_start.tif")
-US_NO2_median("US_NO2_2020-03-19_start.tif")
+China_NO2_median("China_NO2_2019-11-23_start.tif")
+China_NO2_median("China_NO2_2020-01-23_start.tif")
 
 #Function for finding averages over each time period. 
-US_NO2_average <- function(x) {
-  r <- raster(paste0("./US_NO2_Comparison/", (x))) %>% flip(direction='y')
-  r.vals <- raster::extract(r, us.shp)
+China_NO2_average <- function(x) {
+  r <- raster(paste0("./China_NO2_Comparison/", (x))) %>% flip(direction='y')
+  r.vals <- raster::extract(r, China.shp)
   lapply(r.vals, FUN=mean, na.rm = TRUE)
 }
-US_NO2_average("US_NO2_2020-01-19_start.tif")
-US_NO2_average("US_NO2_2020-03-19_start.tif")
+China_NO2_average("China_NO2_2019-11-23_start.tif")
+China_NO2_average("China_NO2_2020-01-23_start.tif") 
 
 #Boxplots: not sure why post-COVID is higher median in each case. Need to adjust for degrees of urbanization? 
-US_2019_change <- function(x, y) {
-  r1 <- raster(paste0("./US_NO2_Comparison/", (x))) %>% flip(direction='y')
-  r1 <- crop(r1, extent(us.shp))
+China_2019_change <- function(x, y) {
+  r1 <- raster(paste0("./China_NO2_Comparison/", (x))) %>% flip(direction='y')
+  r1 <- crop(r1, extent(China.shp))
   mask(r1, us.shp)
-  r2 <- raster(paste0("./US_NO2_Comparison/", (y))) %>% flip(direction='y')
-  r2 <- crop(r2, extent(us.shp))
+  r2 <- raster(paste0("./China_NO2_Comparison/", (y))) %>% flip(direction='y')
+  r2 <- crop(r2, extent(China.shp))
   mask(r2, us.shp)
   s <- stack(r1, r2)
   boxplot(s, col=c('red', 'blue'), 
-          main='NO2 Before and After COVID-19', 
+          main='China NO2: 2019 Seasonal Change', 
           ylab='Date',
-          names = c('2019 Jan-Mar', '2019 Mar-May'))
+          names = c('Nov2018-Jan2019', 'Jan-March 2019'))
 }
-US_2019_change("US_NO2_2019-01-19_start.tif", "US_NO2_2019-03-19_start.tif")
+China_2019_change("China_NO2_2018-11-23_start.tif", "China_NO2_2019-01-23_start.tif")
 
-US_2020_change <- function(x, y) {
-  r1 <- raster(paste0("./US_NO2_Comparison/", (x))) %>% flip(direction='y')
-  r1 <- crop(r1, extent(us.shp))
+China_2020_change <- function(x, y) {
+  r1 <- raster(paste0("./China_NO2_Comparison/", (x))) %>% flip(direction='y')
+  r1 <- crop(r1, extent(China.shp))
   mask(r1, us.shp)
-  r2 <- raster(paste0("./US_NO2_Comparison/", (y))) %>% flip(direction='y')
-  r2 <- crop(r2, extent(us.shp))
+  r2 <- raster(paste0("./China_NO2_Comparison/", (y))) %>% flip(direction='y')
+  r2 <- crop(r2, extent(China.shp))
   mask(r2, us.shp)
   s <- stack(r1, r2)
   boxplot(s, col=c('red', 'blue'), 
-          main='NO2 Before and After COVID-19', 
+          main='China NO2 Before and After COVID-19', 
           ylab='Date',
-          names = c('2020 Jan-Mar', '2020 Mar-May'))
+          names = c('Nov2019-Jan2020', 'Jan-March 2020'))
 }
-US_2020_change("US_NO2_2020-01-19_start.tif", "US_NO2_2020-03-19_start.tif")
+China_2020_change("China_NO2_2019-11-23_start.tif", "China_NO2_2020-01-23_start.tif")
 
-US_2021_change <- function(x, y) {
-  r1 <- raster(paste0("./US_NO2_Comparison/", (x))) %>% flip(direction='y')
-  r1 <- crop(r1, extent(us.shp))
+China_2021_change <- function(x, y) {
+  r1 <- raster(paste0("./China_NO2_Comparison/", (x))) %>% flip(direction='y')
+  r1 <- crop(r1, extent(China.shp))
   mask(r1, us.shp)
-  r2 <- raster(paste0("./US_NO2_Comparison/", (y))) %>% flip(direction='y')
-  r2 <- crop(r2, extent(us.shp))
+  r2 <- raster(paste0("./China_NO2_Comparison/", (y))) %>% flip(direction='y')
+  r2 <- crop(r2, extent(China.shp))
   mask(r2, us.shp)
   s <- stack(r1, r2)
   boxplot(s, col=c('red', 'blue'), 
-          main='NO2 Before and After COVID-19', 
+          main='China NO2: 2021 Seasonal Change', 
           ylab='Date',
-          names = c('2021 Jan-Mar', '2021 Mar-May'))
+          names = c('Nov2020-Jan2021', 'jan-March 2021'))
 }
-US_2021_change("US_NO2_2021-01-19_start.tif", "US_NO2_2021-03-19_start.tif")
+China_2021_change("China_NO2_2020-11-23_start.tif", "China_NO2_2021-01-23_start.tif")
 ```
