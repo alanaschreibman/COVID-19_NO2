@@ -142,7 +142,7 @@ countries.NO2.fxn(-9, 49, 2, 61, "United Kingdom")
 #Selecting half world rasters to mosaic together. 
 countries.NO2.fxn(-90, -90, 90, 90, "Half_World")
 countries.NO2.fxn(-180, -90, 0, 90, "Left_Half_World")
-countries.NO2.fxn(0, -90, 180, 90, "Right_Half_World")
+countries.NO2.fxn(0, -90, r180, 90, "Right_Half_World")
 
 #US only using cloud storage: making into function where dates are input. 
 geometry <- ee$Geometry$Rectangle(
