@@ -46,6 +46,7 @@ ee_install(py_env = "rgee")
 ee_install()
 gcs_setup()
 ```
+
 ```{r, eval = TRUE}
 gcs_auth("/Users/alanaschreibman/ska_2.json")
 Sys.setenv("GAR_CLIENT_JSON" = "/Users/alanaschreibman/ska_2.json")
@@ -59,7 +60,6 @@ ee_Initialize(email = 'alanacate4444@gmail.com')
 ee_Initialize(email = 'alanacate4444@gmail.com', drive = TRUE)
 ee_Initialize(email = 'alanacate4444@gmail.com', gcs = TRUE)
 ```
-
 
 ###Experimenting with Earth Engine.
 ```{r, eval = TRUE}
@@ -107,43 +107,7 @@ print(path)
 end_time <- Sys.time()
 end_time - start_time
 
-#World data using cloud storage. Commands seem to work; problem is that only small regions can be downloaded at a time because there are too many pixels.
-image1 <- ee$ImageCollection("COPERNICUS/S5P/NRTI/L3_NO2")$filterDate('2018-07-01', '2018-10-01')$select("NO2_column_number_density") %>%
-   ee$ImageCollection$mean()
-geometry <- ee$Geometry$Rectangle(
-  coords = c(-180, -90, 180, 83.57027),
-  scale = 30,
-  crs = 'WGS84'
-)
-NO2.world <- ee_image_to_gcs(
-  image = image1,
-  region = geometry,
-  bucket = "rgee_bucket", 
-  fileFormat = "GEO_TIFF",
-  fileNamePrefix = "NO2_world_earthengine"
-)
-NO2.world$start()
-ee_monitoring(NO2.world)
-
-#Continent data using cloud storage. 
-image1 <- ee$ImageCollection("COPERNICUS/S5P/NRTI/L3_NO2")$filterDate('2018-07-01', '2018-10-01')$select("NO2_column_number_density") %>%
-   ee$ImageCollection$mean()
-geometry <- ee$Geometry$Rectangle(
-  coords = c(-180, 5,-9, 90),
-  scale = 30,
-  crs = 'WGS84'
-)
-NO2.NorthAmerica <- ee_image_to_gcs(
-  image = image1,
-  region = geometry,
-  bucket = "rgee_bucket", 
-  fileFormat = "GEO_TIFF",
-  fileNamePrefix = "NO2_NorthAmerica_earthengine"
-)
-NO2.NorthAmerica$start()
-ee_monitoring(NO2.NorthAmerica)
-
-#All countries using cloud storage: making into function where coordinates are input. 
+#All countries using cloud storage: making into function where coordinates and country name are inputs. 
 countries.NO2.fxn <- function(minx, miny, maxx, maxy, country) {
   image1 <- ee$ImageCollection("COPERNICUS/S5P/NRTI/L3_NO2")$filterDate('2018-07-10', '2019-07-10')$select("NO2_column_number_density") %>% ee$ImageCollection$mean()
   geometry <- ee$Geometry$Rectangle(
@@ -162,6 +126,8 @@ countries.NO2.fxn <- function(minx, miny, maxx, maxy, country) {
   output2 <- ee_monitoring(NO2.world.countries)
   return(c(output1, output2))
 } 
+
+#Selected 10 countries for exploratory analysis. 
 countries.NO2.fxn(-180, 19, -66, 71.5, "United States")
 countries.NO2.fxn(72, 17, 136, 54, "China")
 countries.NO2.fxn(68,  7, 97, 36, "India")
@@ -172,6 +138,11 @@ countries.NO2.fxn(34, 29, 35, 34, "Israel")
 countries.NO2.fxn(-74, -55.5, -54, -20, "Argentina")
 countries.NO2.fxn(-180, 42, 180, 82, "Russia")
 countries.NO2.fxn(-9, 49, 2, 61, "United Kingdom")
+
+#Selecting half world rasters to mosaic together. 
+countries.NO2.fxn(-90, -90, 90, 90, "Half_World")
+countries.NO2.fxn(-180, -90, 0, 90, "Left_Half_World")
+countries.NO2.fxn(0, -90, 180, 90, "Right_Half_World")
 
 #US only using cloud storage: making into function where dates are input. 
 geometry <- ee$Geometry$Rectangle(
