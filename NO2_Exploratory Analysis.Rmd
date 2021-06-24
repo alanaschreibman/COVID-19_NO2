@@ -208,6 +208,24 @@ China.date.fxn("2020-01-23", "2020-03-23")
 
 China.date.fxn("2020-11-23", "2021-01-23")
 China.date.fxn("2021-01-23", "2021-03-23")
+
+#Time series weekly analysis: test code with US. 
+#Weeks defined Mondays-Sun6days starting on Dec 31st 2018. 
+dates.2019 <- seq(as.Date("2018-12-31"), as.Date("2019-12-29"), by=7) #List of dates starting Dec 31 2018. 
+
+for (i in 1:length(dates.2019)) {
+  US.date.fxn(as.character(as.Date(dates.2019[[i]])), as.character(as.Date(dates.2019[[i]]) + 6))
+} 
+
+#Weeks defined Mondays-Sundays starting on Dec 30th 2019. 
+dates.2020 <- seq(as.Date("2019-12-30"), as.Date("2021-01-03"), by=7) #List of dates starting Dec 30th 2019. 
+
+for (i in 1:length(dates.2020)) {
+  US.date.fxn(as.character(as.Date(dates.2020[[i]])), as.character(as.Date(dates.2020[[i]]) + 6))
+} #Loops over all weeks of the year 2020. 
+
+
+
 ```
 
 ###Mapping data with Earth Engine interactive maps. 
