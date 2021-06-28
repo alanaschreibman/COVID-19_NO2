@@ -445,7 +445,7 @@ plot(us.shp, add = TRUE)
 
 #2019 data. 
 #Creates list of raster files from folder to call in function. 
-rastlist.2019 <- list.files(path = "time_analysis_2019", pattern='.tif$', 
+rastlist.2019.left <- list.files(path = "time_analysis_2019", pattern='.tif$', 
 all.files=TRUE, full.names=FALSE)
 
 #Creates list of dates to call in function. 
@@ -519,7 +519,7 @@ ggplot(US.weekly.df, aes(x = Date, y = NO2_Concentration, group = Period, color 
   scale_x_date(date_labels = "%b",date_breaks = "1 month",expand=c(0,0),limits=c(as.Date("2019-12-25",format="%Y-%m-%d"),as.Date("2020-12-31",format="%Y-%m-%d"))) +
 ylim(0, 3E-5) +
   
-    #Pre-lockdown
+  #Pre-lockdown
   geom_rect(data=US.weekly.df,aes(xmin=as.Date("2019-12-25",format="%Y-%m-%d"),xmax=as.Date("2020-03-19",format="%Y-%m-%d"),ymin=2.9E-5,ymax=3E-5),fill = "#c0c0c0",color = NA, alpha=0.02) +
   geom_text(data=US.weekly.df,aes(x=as.Date("2020-02-07"),y=2.95E-5),label="Pre-Lockdown",color = "black", size = 2) +
   geom_vline(data=US.weekly.df,xintercept = as.Date("2020-03-19",format="%Y-%m-%d"),linetype="dashed",colour="black",size=0.75,alpha=0.8) + 
@@ -534,6 +534,136 @@ ylim(0, 3E-5) +
   #Lockdown 2
   geom_rect(data=US.weekly.df,aes(xmin=as.Date("2020-11-16",format="%Y-%m-%d"),xmax=as.Date("2020-12-31",format="%Y-%m-%d"), ymin=2.9E-5,ymax=3E-5),fill = "#fa9796",color = NA,alpha=0.02) +
   geom_text(data=US.weekly.df,aes(x=as.Date("2020-12-10"),y=2.95E-5),label="Lockdown 2", color = "black", size = 2) +
+  theme_bw() + 
+  scale_alpha_manual(values = c(0.4, 1.1)) + 
+  scale_color_manual(values = c("gray", "blue", "black")) +
+  ggsave("time_series.pdf")
+```
+
+####Attempt to do interrupted time series analysis with all world data. 
+```{r, eval = TRUE}
+#Use function in other NO2_Exploratory Analysis file to filter out each week from Jan-Dec 2019 and Jan-Dec 2020 for comparison.
+
+#Used code:
+#gsutil -m cp \
+# >   "file names" \
+# >   COVID-19_NO2/time_analysis_2020
+
+# in terminal to copy all files from google cloud storage into folders in working directory. 
+
+#2019 data. 
+#Creates list of raster files from folder to call in function. 
+rastlist.2019.left <- list.files(path = "time_analysis_2019_left", pattern='.tif$', 
+all.files=TRUE, full.names=FALSE)
+rastlist.2019.right <- list.files(path = "time_analysis_2019_right", pattern='.tif$', 
+all.files=TRUE, full.names=FALSE)
+
+#Creates list of dates to call in function. 
+dates.2019 <- seq(as.Date("2018-12-31"), as.Date("2019-12-29"), by=7) #List of dates starting Dec 31 2018. 
+
+#Function to make data frame for weekly average NO2 concentration. 
+read.fxn <- function(x1, x2, y) {
+  left <- raster(paste0("time_analysis_2019_left/", x1)) %>%
+    flip(direction='y') 
+  right <- raster(paste0("time_analysis_2019_right/", x2)) %>%
+    flip(direction='y') 
+  x <- list(left, right)
+  names(x)[1:2] <- c('x', 'y')
+  x$fun <- mean
+  x$na.rm <- TRUE
+  world.NO2.r <- do.call(mosaic, x) #Combines left and right halves of world raster. 
+  r.vals <- raster::extract(world.NO2.r, wrld_simpl)
+  r.mean <- lapply(r.vals, FUN=mean, na.rm = TRUE)
+  final.df <- data.frame(wrld_simpl@data, r.mean)  
+  Date <- as.Date(dates.2019[[y]])
+  Week <- paste0(as.character(as.Date(dates.2019[[y]])), " to ", as.character(as.Date(dates.2019[[y]]) + 6)) 
+  Period <- rep(2019, length.out = nrow(final.df)) 
+  world.2019.weekly <- cbind(final.df, Date, Week, Period) 
+  world.2019.weekly <- world.2019.weekly %>% dplyr::mutate(Date = as.factor(strftime(as.Date(Date, format="%Y-%m-%d"), format="%m-%d")))
+  rm(r.mean, r.vals)
+  names(world.2019.weekly)[12] <- "NO2_Concentration"
+  world.2019.weekly <- world.2019.weekly %>% select(Period, Date, Week, NO2_Concentration)
+}
+
+x1 <- rastlist.2019.left
+x2 <- rastlist.2019.right
+y <- 1:length(dates.2019)
+world.2019.weekly.df <- purrr::map2_dfr(x1, x2, y, read.fxn) 
+world.2019.weekly.df$Date <- paste0("2020-", world.2019.weekly.df$Date)
+
+#2020 data.  
+#Creates list of raster files from folder to call in function. 
+rastlist.2020.left <- list.files(path = "time_analysis_2020_left", pattern='.tif$', 
+all.files=TRUE, full.names=FALSE)
+rastlist.2020.right <- list.files(path = "time_analysis_2020_right", pattern='.tif$', 
+all.files=TRUE, full.names=FALSE)
+
+#Creates list of dates to call in function. 
+dates.2020 <- seq(as.Date("2019-12-30"), as.Date("2021-01-03"), by=7) #List of dates starting Dec 30th 2019. 
+
+#Function to make data frame for weekly average NO2 concentration. 
+read.fxn <- function(x1, x2, y) {
+  left <- raster(paste0("time_analysis_2020_left/", x1)) %>%
+    flip(direction='y') 
+  right <- raster(paste0("time_analysis_2020_right/", x2)) %>%
+    flip(direction='y') 
+  x <- list(left, right)
+  names(x)[1:2] <- c('x', 'y')
+  x$fun <- mean
+  x$na.rm <- TRUE
+  world.NO2.r <- do.call(mosaic, x) #Combines left and right halves of world raster. 
+  r.vals <- raster::extract(r, wlrd_simpl)
+  r.mean <- lapply(r.vals, FUN=mean, na.rm = TRUE)
+  final.df <- data.frame(wrld_simpl@data, r.mean)   
+  Date <- as.factor(as.Date(dates.2020[[y]]))
+  Week <- paste0(as.character(as.Date(dates.2020[[y]])), " to ", as.character(as.Date(dates.2020[[y]]) + 6)) 
+  Period <- rep(2020, length.out = nrow(final.df)) 
+  world.2020.weekly <- cbind(final.df, Date, Week, Period)     # Add new column to data
+  rm(r.mean, r.vals)
+  names(world.2020.weekly)[12] <- "NO2_Concentration"
+  world.2020.weekly <- world.2020.weekly %>% select(Period, Date, Week, NO2_Concentration)
+}
+
+x1 <- rastlist.2020.left
+x2 <- rastlist.2020.right
+y <- 1:length(dates.2020)
+world.2020.weekly.df <- purrr::map2_dfr(x1, x2, y, read.fxn) 
+world.weekly.df <- rbind(world.2019.weekly.df, world.2020.weekly.df) 
+world.weekly.df$Date <- as.Date(world.weekly.df$Date)
+world.weekly.df$Period <- as.factor(world.weekly.df$Period)
+```
+
+####Attempt to do interrupted time series analysis plots with all world data. 
+```{r, fig.width=20, fig.height=4, eval = TRUE}
+ggplot(world.weekly.df, aes(x = Date, y = NO2_Concentration, group = Period, color = Period)) +
+  geom_line(size = 0.75) + 
+  theme(legend.key.size = unit(1, 'cm'),
+        legend.title = element_text(size=14),
+        legend.text = element_text(size=10),
+        axis.title=element_text(size = 20),
+        axis.text.y=element_text(size=24),
+        axis.text.x=element_text(size=30,angle=90, hjust=1)) +
+  labs(fill = "Year of Measured Pollution") +
+  ggtitle("World NO2 in 2019 vs 2020") +
+  ylab("NO2 Concentration (mol/m^2)") +
+  scale_x_date(date_labels = "%b",date_breaks = "1 month",expand=c(0,0),limits=c(as.Date("2019-12-25",format="%Y-%m-%d"),as.Date("2020-12-31",format="%Y-%m-%d"))) +
+ylim(0, 3E-5) +
+  
+  #Pre-lockdown
+  geom_rect(data=world.weekly.df,aes(xmin=as.Date("2019-12-25",format="%Y-%m-%d"),xmax=as.Date("2020-03-19",format="%Y-%m-%d"),ymin=2.9E-5,ymax=3E-5),fill = "#c0c0c0",color = NA, alpha=0.02) +
+  geom_text(data=world.weekly.df,aes(x=as.Date("2020-02-07"),y=2.95E-5),label="Pre-Lockdown",color = "black", size = 2) +
+  geom_vline(data=world.weekly.df,xintercept = as.Date("2020-03-19",format="%Y-%m-%d"),linetype="dashed",colour="black",size=0.75,alpha=0.8) + 
+  #Lockdown 1
+  geom_rect(data=world.weekly.df,aes(xmin=as.Date("2020-03-19",format="%Y-%m-%d"),xmax=as.Date("2020-06-05",format="%Y-%m-%d"),ymin=2.9E-5,ymax=3E-5),fill = "#fa9796",color = NA,alpha=0.02) +
+  geom_text(data=world.weekly.df,aes(x=as.Date("2020-05-01"),y=2.95E-5),label="Lockdown 1", color = "black", size = 2) +
+  geom_vline(data=world.weekly.df,xintercept=as.Date("2020-06-05",format="%Y-%m-%d"),linetype="dashed",colour="black",size=0.75,alpha=0.8) + 
+  #Re-opening Green PHASE
+  geom_rect(data=world.weekly.df,aes(xmin=as.Date("2020-06-05",format="%Y-%m-%d"),xmax=as.Date("2020-11-16",format="%Y-%m-%d"), ymin=2.9E-5,ymax=3E-5),fill = "#b5dea5",color = NA,alpha=0.02) +
+  geom_text(data=world.weekly.df,aes(x=as.Date("2020-08-15"),y=2.95E-5),label="Re-Opening", color = "black", size = 2) +
+  geom_vline(data=world.weekly.df,xintercept=as.Date("2020-11-16",format="%Y-%m-%d"),linetype="dashed",colour="black",size=0.75,alpha=0.8) + 
+  #Lockdown 2
+  geom_rect(data=world.weekly.df,aes(xmin=as.Date("2020-11-16",format="%Y-%m-%d"),xmax=as.Date("2020-12-31",format="%Y-%m-%d"), ymin=2.9E-5,ymax=3E-5),fill = "#fa9796",color = NA,alpha=0.02) +
+  geom_text(data=world.weekly.df,aes(x=as.Date("2020-12-10"),y=2.95E-5),label="Lockdown 2", color = "black", size = 2) +
   theme_bw() + 
   scale_alpha_manual(values = c(0.4, 1.1)) + 
   scale_color_manual(values = c("gray", "blue", "black")) +
