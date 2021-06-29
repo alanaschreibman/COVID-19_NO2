@@ -224,6 +224,16 @@ for (i in 1:length(dates.2020)) {
   US.date.fxn(as.character(as.Date(dates.2020[[i]])), as.character(as.Date(dates.2020[[i]]) + 6))
 } #Loops over all weeks of the year 2020. 
 
+#Time series weekly analysis: test code with China 
+#Weeks defined Mondays-Sundays starting on Nov 5th 2018. 
+dates.2019 <- seq(as.Date("2018-11-05"), as.Date("2019-11-10"), by=7) #List of dates starting Dec 31 2018. 
+for (i in 1:length(dates.2019)) {
+  China.date.fxn(as.character(as.Date(dates.2019[[i]])), as.character(as.Date(dates.2019[[i]]) + 6))
+}  #Loops over all weeks of the year 2019.
+
+#Weeks defined Mondays-Sundays starting on Dec 30th 2019. 
+dates.2020 <- seq(as.Date("2019-11-04"), as.Date("2020-11-08"), by=7) #List of dates starting Dec 30th 2019. 
+
 
 #Time series weekly analysis: years 2019 and 2020 for right and left halves of the world. 
 for (i in 1:length(dates.2019)) {

@@ -49,7 +49,7 @@ Data set, including possible confounders for use in later analysis, is cleaned a
 owid.filtered <- owid %>%
                   rename(iso.code = iso_code, totcases = total_cases, totdeaths = total_deaths, totcases.mil = total_cases_per_million, totdeaths.mil = total_deaths_per_million, pop.density = population_density, med.age = median_age, older70 = aged_70_older, gdp.cap = gdp_per_capita, card.death = cardiovasc_death_rate, diab.prev = diabetes_prevalence, fem.smokers = female_smokers, male.smokers = male_smokers) %>%
                   select(c(iso.code:totcases, totdeaths, totcases.mil, totdeaths.mil, population, pop.density, med.age, older70, gdp.cap, card.death, diab.prev, fem.smokers, male.smokers)) %>% #Renamed variables and filtered to keep only those of interest. 
-                  filter(date == "2020-05-31") #Filtered out all but most recent date (most recent date is a running sum of total cases).
+                  filter(date == "2021-06-28") #Filtered out all but most recent date (most recent date is a running sum of total cases).
 table(owid.filtered$continent, useNA = "ifany") #Data includes both continent and country-specific outcomes. Continent outcomes can be distinguished by "NA" in the continent column; the continent name is in the location column. 
 ```
 

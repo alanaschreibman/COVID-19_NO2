@@ -20,7 +20,7 @@ knitr::opts_chunk$set(warning = FALSE, message = FALSE)
 ```{r, eval = TRUE}
 #Load libraries needed. 
 library(easypackages)
-libraries("rgdal", "gdalUtils", "raster", "maptools", "ggplot2", "cowplot", "dplyr", "sp", "sf", "rgdal", "stringr", "RColorBrewer")
+libraries("rgdal", "gdalUtils", "raster", "maptools", "ggplot2", "cowplot", "dplyr", "sp", "sf", "rgdal", "stringr", "RColorBrewer", "ggcorrplot", "pander", "forcats", "ggsn")
 ```
 
 ###Merging NO2 data with COVID data for analysis.  
@@ -168,9 +168,42 @@ x$fun <- mean
 x$na.rm <- TRUE
 
 world.NO2.r <- do.call(mosaic, x)
+rm(left, right, x)
+
+#Converting to data frame for plotting. 
+r.crop <- crop(world.NO2.r, extent(wrld_simpl))
+r.crop <- mask(r.crop, wrld_simpl)
+r.pts <- rasterToPoints(r.crop, spatial = TRUE)
+world.NO2.df <- data.frame(r.pts)
+rm(r.pts, r.crop)
+
+myPalette <- colorRampPalette(brewer.pal(9, "YlOrRd")) 
+
+my_theme <- function() {
+  theme_minimal() +                                  # shorthand for white background color
+  theme(axis.line = element_blank(),                 # further customization of theme components
+        axis.text = element_blank(),                 # remove x and y axis text and labels
+        axis.title = element_blank(),
+        panel.grid = element_line(color = "white"),  # make grid lines invisible
+        legend.key.size = unit(0.5, "cm"),           # increase size of legend
+        legend.text = element_text(size = 7),       # increase legend text size
+        legend.title = element_text(size = 7))      # increase legend title size
+}
+
+ggplot() +
+ geom_raster(data = world.NO2.df, aes(x = x, y = y, fill = layer)) + 
+ geom_polygon(data = wrld_simpl, aes(x = long, y = lat, group = group), colour = "black", size = 0.5, fill = NA) +
+  my_theme() + 
+  ggtitle("World NO2 Concentrations 07-10-2018 to 07-10-2019") +
+  #scale_fill_manual(breaks = c(0, 0.0000025, 0.000005, 0.0000075, 0.00001, 0.00002)) +
+  scale_fill_gradientn(name = "NO2 Concentration \n(mol/m^2)", colours = myPalette(100))  +
+    north(x.min = -180, y.min = -90, x.max = 180, y.max = 90, anchor = c(x=-140, y=-35), symbol=12) +
+    scalebar(x.min = -180, y.min = -90, x.max = 180, y.max = 90, dist = 1000, dist_unit = 'km', transform = TRUE, anchor = c(x=-140, y=-60), st.size = 2, model = 'WGS84') +
+  coord_equal()
+
+#R base plots.
 plot(world.NO2.r)
 plot(wrld_simpl, add = TRUE)
-rm(left, right, x)
 ```
 
 ####Preparing data for world analysis. 
@@ -193,52 +226,86 @@ extraction.fxn <- function(x) {
   rm(r.mean, r.vals)
   names(final.df)[5] <- "location" 
   names(final.df)[6] <- "Area" 
-  names(final.df)[8] <- "Region" 
-  names(final.df)[9] <- "Subregion" 
   names(final.df)[10] <- "Longitude" 
   names(final.df)[11] <- "Latitude" 
   names(final.df)[12] <- "NO2_Concentration"
-  final.df <- final.df %>% select(location, Area, Region, Subregion, Longitude, Latitude, NO2_Concentration)
+  final.df <- final.df %>% select(location, Area, Longitude, Latitude, NO2_Concentration)
 }
 
 #Changing shapefile names to match COVID dataset:
 Brunei.shp <- `Brunei Darussalam.shp`
+  Brunei.shp$NAME <- as.character(Brunei.shp$NAME)
+  Brunei.shp@data[1,5] <- sub("Brunei Darussalam", "Brunei", Brunei.shp@data[1,5])
   rm(`Brunei Darussalam.shp`)
 Czechia.shp <- `Czech Republic.shp`
+  Czechia.shp$NAME <- as.character(Czechia.shp$NAME)
+  Czechia.shp@data[1,5] <- sub("Czech Republic", "Czechia", Czechia.shp@data[1,5])
   rm(`Czech Republic.shp`)
 `Democratic Republic of Congo.shp` <- `Democratic Republic of the Congo.shp`
+  `Democratic Republic of Congo.shp`$NAME <- as.character(`Democratic Republic of Congo.shp`$NAME)
+  `Democratic Republic of Congo.shp`@data[1,5] <- sub("Democratic Republic of the Congo", "Democratic Republic of Congo", `Democratic Republic of Congo.shp`@data[1,5])
   rm(`Democratic Republic of the Congo.shp`)
 Iran.shp <- `Iran (Islamic Republic of).shp`
+  Iran.shp$NAME <- as.character(Iran.shp$NAME) 
+  Iran.shp@data$NAME[Iran.shp@data$NAME == "Iran (Islamic Republic of)"] <- "Iran"
   rm(`Iran (Islamic Republic of).shp`)
 Laos.shp <-  `Lao People's Democratic Republic.shp`
+  Laos.shp$NAME <- as.character(Laos.shp$NAME)
+  Laos.shp@data[1,5] <- sub("Lao People's Democratic Republic", "Laos", Laos.shp@data[1,5])
   rm(`Lao People's Democratic Republic.shp`)
 Libya.shp <- `Libyan Arab Jamahiriya.shp`
+  Libya.shp$NAME <- as.character(Libya.shp$NAME) 
+  Libya.shp@data[1,5] <- sub("Libyan Arab Jamahiriya", "Libya", Libya.shp@data[1,5])
   rm(`Libyan Arab Jamahiriya.shp`)
 Moldova.shp <- `Republic of Moldova.shp`
+  Moldova.shp$NAME <- as.character(Moldova.shp$NAME) 
+  Moldova.shp@data[1,5] <- sub("Republic of Moldova", "Moldova", Moldova.shp@data[1,5])
   rm(`Republic of Moldova.shp`)
 Myanmar.shp <- Burma.shp
+  Myanmar.shp$NAME <- as.character(Myanmar.shp$NAME) 
+  Myanmar.shp@data[1,5] <- sub("Burma", "Myanmar", Myanmar.shp@data[1,5])
   rm(Burma.shp)
 `South Korea.shp` <- `Korea, Republic of.shp`
+  `South Korea.shp`$NAME <- as.character(`South Korea.shp`$NAME) 
+  `South Korea.shp`@data[1,5] <- sub("Korea, Republic of", "South Korea", `South Korea.shp`@data[1,5])
   rm(`Korea, Republic of.shp`)
 `North Korea.shp` <- `Korea, Democratic People's Republic of.shp`
+  `North Korea.shp`$NAME <- as.character(`North Korea.shp`$NAME) 
+  `North Korea.shp`@data[1,5] <- sub("Korea, Democratic People's Republic of", "North Korea",`North Korea.shp`@data[1,5])
   rm(`Korea, Democratic People's Republic of.shp`)
 `South Sudan.shp` <- `Sudan.shp`
+  `South Sudan.shp`$NAME <- as.character(`South Sudan.shp`$NAME) 
+  `South Sudan.shp`@data[1,5] <- sub("Sudan", "South Sudan",`South Sudan.shp`@data[1,5])
   rm(Sudan.shp)
 `Syria.shp` <- `Syrian Arab Republic.shp`
+  Syria.shp$NAME <- as.character(Syria.shp$NAME) 
+  Syria.shp@data[1,5] <- sub("Syrian Arab Republic", "Syria", Syria.shp@data[1,5])
   rm(`Syrian Arab Republic.shp`)
 `North Macedonia.shp` <- `The former Yugoslav Republic of Macedonia.shp`
+  `North Macedonia.shp`$NAME <- as.character(`North Macedonia.shp`$NAME) 
+  `North Macedonia.shp`@data[1,5] <- sub("The former Yugoslav Republic of Macedonia", "North Macedonia", `North Macedonia.shp`@data[1,5])
   rm(`The Former Yugoslav Republic of Macedonia.shp`)
+`Micronesia (country).shp` <- `Micronesia, Federated States of.shp`
+  `Micronesia (country).shp`$NAME <- as.character(`Micronesia (country).shp`$NAME) 
+  `Micronesia (country).shp`@data$NAME[`Micronesia (country).shp`@data$NAME == "Micronesia, Federated States of"] <- "Micronesia (country)"  
+  rm(`Micronesia, Federated States of.shp`)
 Timor.shp <- `Timor-Leste.shp`
+  Timor.shp$NAME <- as.character(Timor.shp$NAME) 
+  Timor.shp@data[1,5] <- sub("Timor-Leste", "Timor", Timor.shp@data[1,5])
   rm(`Timor-Leste.shp`)
 Vatican.shp <- `Holy See (Vatican City).shp`
- rm(`Holy See (Vatican City).shp`)
+  Vatican.shp$NAME <- as.character(Vatican.shp$NAME) 
+  Vatican.shp@data$NAME[Vatican.shp@data$NAME == "Holy See (Vatican City)"] <- "Vatican"  
+  rm(`Holy See (Vatican City).shp`)
 Vietnam.shp <- `Viet Nam.shp`
+  Vietnam.shp$NAME <- as.character(Vietnam.shp$NAME) 
+  Vietnam.shp@data[1,5] <- sub("Viet Nam", "Vietnam", Vietnam.shp@data[1,5])
   rm(`Viet Nam.shp`)
 
 #Extracting mean NO2 values and adding to coordinates data to make final data frame.
-  #Missing from shapefiles: Kosovo, Tanzania, Eswatini, Tanzania
+  #Missing from shapefiles: Kosovo, Tanzania, Eswatini
 total.df = data.frame()
-for (i in c(Afghanistan.shp, Albania.shp, Algeria.shp, Andorra.shp, Angola.shp, `Antigua and Barbuda.shp`, Argentina.shp, Armenia.shp, Australia.shp, Austria.shp, Azerbaijan.shp, Bahamas.shp, Bahrain.shp, Bangladesh.shp, Barbados.shp, Belarus.shp, Belgium.shp, Belize.shp, Benin.shp, Bhutan.shp, Bolivia.shp, `Bosnia and Herzegovina.shp`, Botswana.shp, Brazil.shp, Brunei.shp, Bulgaria.shp, `Burkina Faso.shp`, Burundi.shp, Cambodia.shp, Cameroon.shp, Canada.shp, `Cape Verde.shp`, `Central African Republic.shp`, Chad.shp, Chile.shp, China.shp, Colombia.shp, Comoros.shp, Congo.shp, `Costa Rica.shp`, `Cote d'Ivoire.shp`, Croatia.shp, Cuba.shp, Cyprus.shp, Czechia.shp, `Democratic Republic of Congo.shp`, Denmark.shp, Djibouti.shp, Dominica.shp, `Dominican Republic.shp`, Ecuador.shp, Egypt.shp, `El Salvador.shp`, `Equatorial Guinea.shp`, Eritrea.shp, Estonia.shp, Ethiopia.shp, Fiji.shp, Finland.shp, France.shp, Gabon.shp, Gambia.shp, Georgia.shp, Germany.shp, Ghana.shp, Greece.shp, Grenada.shp, Guatemala.shp, Guinea.shp, `Guinea-Bissau.shp`, Guyana.shp, Haiti.shp, Honduras.shp, `Hong Kong.shp`, Hungary.shp, Iceland.shp, India.shp, Indonesia.shp, Iran.shp, Ireland.shp, Israel.shp, Italy.shp, Jamaica.shp, Japan.shp, Jordan.shp, Kazakhstan.shp, Kenya.shp, Kuwait.shp, Kyrgyzstan.shp, Laos.shp, Latvia.shp, Lebanon.shp, Lesotho.shp, Liberia.shp, Libya.shp, Liechtenstein.shp, Lithuania.shp, Luxembourg.shp, Madagascar.shp, Malawi.shp, Malaysia.shp, Maldives.shp, Mali.shp, Malta.shp, Mauritania.shp, Mauritius.shp, Mexico.shp, Moldova.shp, Monaco.shp, Mongolia.shp, Montenegro.shp, Morocco.shp, Mozambique.shp, Myanmar.shp, Namibia.shp, Nepal.shp, Netherlands.shp, `New Zealand.shp`, Nicaragua.shp, Niger.shp, Nigeria.shp, `North Macedonia.shp`, Norway.shp, Oman.shp, Pakistan.shp, Palestine.shp, Panama.shp, `Papua New Guinea.shp`, Paraguay.shp, Peru.shp, Philippines.shp, Poland.shp, Portugal.shp, Qatar.shp, Romania.shp, Russia.shp, Rwanda.shp, `Saint Kitts and Nevis.shp`, `Saint Lucia.shp`, `Saint Vincent and the Grenadines.shp`, `San Marino.shp`, `Sao Tome and Principe.shp`, `Saudi Arabia.shp`, Senegal.shp, Serbia.shp, Seychelles.shp, `Sierra Leone.shp`, Singapore.shp, Slovakia.shp, Slovenia.shp, Somalia.shp, `South Africa.shp`, `South Korea.shp`, `South Sudan.shp`, Spain.shp, `Sri Lanka.shp`, `South Sudan.shp`, Suriname.shp, Sweden.shp, Switzerland.shp, Syria.shp, Taiwan.shp, Tajikistan.shp, Thailand.shp, Timor.shp, Togo.shp, `Trinidad and Tobago.shp`, Tunisia.shp, Turkey.shp, Uganda.shp, Ukraine.shp, `United Arab Emirates.shp`, `United Kingdom.shp`, `United States.shp`, Uruguay.shp, Uzbekistan.shp, Vatican.shp, Venezuela.shp, Vietnam.shp, Yemen.shp, Zambia.shp, Zimbabwe.shp)){
+for (i in c(Afghanistan.shp, Albania.shp, Algeria.shp, Andorra.shp, Angola.shp, `Antigua and Barbuda.shp`, Argentina.shp, Armenia.shp, Australia.shp, Austria.shp, Azerbaijan.shp, Bahamas.shp, Bahrain.shp, Bangladesh.shp, Barbados.shp, Belarus.shp, Belgium.shp, Belize.shp, Benin.shp, Bhutan.shp, Bolivia.shp, `Bosnia and Herzegovina.shp`, Botswana.shp, Brazil.shp, Brunei.shp, Bulgaria.shp, `Burkina Faso.shp`, Burundi.shp, Cambodia.shp, Cameroon.shp, Canada.shp, `Cape Verde.shp`, `Central African Republic.shp`, Chad.shp, Chile.shp, China.shp, Colombia.shp, Comoros.shp, Congo.shp, `Costa Rica.shp`, `Cote d'Ivoire.shp`, Croatia.shp, Cuba.shp, Cyprus.shp, Czechia.shp, `Democratic Republic of Congo.shp`, Denmark.shp, Djibouti.shp, Dominica.shp, `Dominican Republic.shp`, Ecuador.shp, Egypt.shp, `El Salvador.shp`, `Equatorial Guinea.shp`, Eritrea.shp, Estonia.shp, Ethiopia.shp, Fiji.shp, Finland.shp, France.shp, Gabon.shp, Gambia.shp, Georgia.shp, Germany.shp, Ghana.shp, Greece.shp, Grenada.shp, Guatemala.shp, Guinea.shp, `Guinea-Bissau.shp`, Guyana.shp, Haiti.shp, Honduras.shp, `Hong Kong.shp`, Hungary.shp, Iceland.shp, India.shp, Indonesia.shp, Iran.shp, Ireland.shp, Israel.shp, Italy.shp, Jamaica.shp, Japan.shp, Jordan.shp, Kazakhstan.shp, Kenya.shp, Kuwait.shp, Kyrgyzstan.shp, Laos.shp, Latvia.shp, Lebanon.shp, Lesotho.shp, Liberia.shp, Libya.shp, Liechtenstein.shp, Lithuania.shp, Luxembourg.shp, Madagascar.shp, Malawi.shp, Malaysia.shp, Maldives.shp, Mali.shp, Malta.shp, Mauritania.shp, Mauritius.shp, Mexico.shp, `Micronesia (country).shp`, Moldova.shp, Monaco.shp, Mongolia.shp, Montenegro.shp, Morocco.shp, Mozambique.shp, Myanmar.shp, Namibia.shp, Nepal.shp, Netherlands.shp, `New Zealand.shp`, Nicaragua.shp, Niger.shp, Nigeria.shp, `North Macedonia.shp`, Norway.shp, Oman.shp, Pakistan.shp, Palestine.shp, Panama.shp, `Papua New Guinea.shp`, Paraguay.shp, Peru.shp, Philippines.shp, Poland.shp, Portugal.shp, Qatar.shp, Romania.shp, Russia.shp, Rwanda.shp, `Saint Kitts and Nevis.shp`, `Saint Lucia.shp`, `Saint Vincent and the Grenadines.shp`, `San Marino.shp`, `Sao Tome and Principe.shp`, `Saudi Arabia.shp`, Senegal.shp, Serbia.shp, Seychelles.shp, `Sierra Leone.shp`, Singapore.shp, Slovakia.shp, Slovenia.shp, Somalia.shp, `South Africa.shp`, `South Korea.shp`, `South Sudan.shp`, Spain.shp, `Sri Lanka.shp`, `South Sudan.shp`, Suriname.shp, Sweden.shp, Switzerland.shp, Syria.shp, Taiwan.shp, Tajikistan.shp, Thailand.shp, Timor.shp, Togo.shp, `Trinidad and Tobago.shp`, Tunisia.shp, Turkey.shp, Uganda.shp, Ukraine.shp, `United Arab Emirates.shp`, `United Kingdom.shp`, `United States.shp`, Uruguay.shp, Uzbekistan.shp, Vatican.shp, Venezuela.shp, Vietnam.shp, Yemen.shp, Zambia.shp, Zimbabwe.shp)) {
     # vector output
     country.df <- extraction.fxn(i) 
     # add vector to premade dataframe
@@ -246,11 +313,363 @@ for (i in c(Afghanistan.shp, Albania.shp, Algeria.shp, Andorra.shp, Angola.shp, 
     total.df <- rbind(total.df,df)
 }
 
+#Read in IHME regions data. 
+IHME.regions.df <- read.csv(file = 'IHME_regions.csv', header = TRUE) 
+IHME.regions.df <- IHME.regions.df %>% rename(location = Countries) %>% select("Super.region", "Regions", "location")
+
 #Merged geospatial data set with COVID data (variables come from COVID exploratory analysis RMD file). 
-covid.NO2.df <- merge(owid.countries, total.df, by = "location")
+covid.NO2.df <- full_join(IHME.regions.df, owid.countries, by = "location")
+covid.NO2.df <- full_join(covid.NO2.df, total.df, by = "location")
+covid.NO2.df$Regions <- as.factor(covid.NO2.df$Regions)
+covid.NO2.df$Super.region <- as.factor(covid.NO2.df$Super.region)
 ```
 
-####World Analysis with COVID outcomes. 
+####Univariate analysis of world NO2 concentrations. 
+```{r, eval = TRUE}
+#Statistics on world NO2 concentrations. 
+covid.NO2.df %>%
+    summarize(variable = "NO2_Concentration", mean_NO2 = mean(NO2_Concentration), st_dev_cty = sd(NO2_Concentration)) %>%
+    pander
+
+covid.NO2.df %>%
+    summarize(variable = "NO2_Concentration",
+              q0.2 = quantile(NO2_Concentration, 0.2),
+              q0.4 = quantile(NO2_Concentration, 0.4),
+              q0.6 = quantile(NO2_Concentration, 0.6),
+              q0.8 = quantile(NO2_Concentration, 0.8)) %>%
+    pander
+
+#Histogram of NO2 concentrations.
+covid.NO2.df %>%
+    ggplot(aes(NO2_Concentration)) +
+    geom_histogram(color = "black",fill = "grey") +
+    geom_vline(xintercept = mean(covid.NO2.df$NO2_Concentration), lwd = 2) +
+    labs(title = "Distribution of Tropospheric NO2",
+         x = "NO2 Concentration (mol/m^2)",
+         y = "Number of Countries") +
+    theme_minimal() +
+    scale_x_continuous(breaks = seq(0,8E-5,0.5E-5)) +
+    theme(axis.text.x = element_text(angle = 45,hjust=1))
+```
+
+####Univariate analysis of world COVID statistics. 
+```{r, eval = TRUE}
+#Statistics on world COVID case statistics. 
+covid.NO2.df %>%
+    summarize(variable = "totcases.mil", mean_cases = mean(totcases.mil), st_dev_cty = sd(totcases)) %>%
+    pander
+
+covid.NO2.df %>%
+    summarize(variable = "totcases.mil",
+              q0.2 = quantile(totcases.mil, 0.2, na.rm = TRUE),
+              q0.4 = quantile(totcases.mil, 0.4, na.rm = TRUE),
+              q0.6 = quantile(totcases.mil, 0.6, na.rm = TRUE),
+              q0.8 = quantile(totcases.mil, 0.8, na.rm = TRUE)) %>%
+    pander
+
+#Histogram of COVID case statistics.
+max(covid.NO2.df$totcases.mil, na.rm = TRUE)
+covid.NO2.df %>%
+    ggplot(aes(totcases.mil)) +
+    geom_histogram(color = "black",fill = "grey") +
+    geom_vline(xintercept = mean(covid.NO2.df$totcases.mil), lwd = 2) +
+    labs(title = "Distribution of World COVID-19 Cases per Million",
+         x = "Total COVID-19 Cases per Million",
+         y = "Number of Countries") +
+    theme_minimal() +
+    scale_x_continuous(breaks = seq(0, 179667.4,10000)) +
+    theme(axis.text.x = element_text(angle = 45,hjust=1))
+
+#Statistics on world COVID death statistics. 
+covid.NO2.df %>%
+    summarize(variable = "totdeaths.mil", mean_cases = mean(totcases.mil), st_dev_cty = sd(totcases)) %>%
+    pander
+
+covid.NO2.df %>%
+    summarize(variable = "totdeaths.mil",
+              q0.2 = quantile(totdeaths.mil, 0.2, na.rm = TRUE),
+              q0.4 = quantile(totdeaths.mil, 0.4, na.rm = TRUE),
+              q0.6 = quantile(totdeaths.mil, 0.6, na.rm = TRUE),
+              q0.8 = quantile(totdeaths.mil, 0.8, na.rm = TRUE)) %>%
+    pander
+
+#Histogram of COVID statistics.
+max(covid.NO2.df$totdeaths.mil, na.rm = TRUE)
+covid.NO2.df %>%
+    ggplot(aes(totdeaths.mil)) +
+    geom_histogram(color = "black",fill = "grey") +
+    geom_vline(xintercept = mean(covid.NO2.df$totdeaths.mil, na.rm = TRUE), lwd = 2) +
+    labs(title = "Distribution of World COVID-19 Deaths per Million",
+         x = "Total COVID-19 Deaths per Million",
+         y = "Number of Countries") +
+    theme_minimal() +
+    scale_x_continuous(breaks = seq(0,5820.087,500)) +
+    theme(axis.text.x = element_text(angle = 45,hjust=1))
+```
+
+####Bivariate analysis of NO2 concentrations, COVID data, and categorical variables (continent divisions)
+```{r, fig.width=5, fig.height=5,eval = TRUE}
+#Summary statistics, NO2, grouping by Super.region
+covid.NO2.df %>% 
+  group_by(Super.region) %>%
+  summarize(mean_NO2 = mean(NO2_Concentration, na.rm = TRUE), sd_NO2 = sd(NO2_Concentration, na.rm = TRUE)) %>%
+  pander
+
+#Summary statistics, COVID cases, grouping by Super.region
+covid.NO2.df %>% 
+  group_by(Super.region) %>%
+  summarize(mean_cases.mil = mean(totcases.mil, na.rm = TRUE), sd_cases.mil = sd(totcases.mil, na.rm = TRUE)) %>%
+  pander
+
+#Summary statistics, COVID deaths, grouping by Super.region
+covid.NO2.df %>% 
+  group_by(Super.region) %>%
+  summarize(mean_deaths.mil = mean(totdeaths.mil, na.rm = TRUE), sd_deaths.mil = sd(totdeaths.mil, na.rm = TRUE)) %>%
+  pander
+
+#Histogram, NO2, grouping by Super.region
+covid.NO2.df %>%
+    ggplot(aes(NO2_Concentration)) +
+    geom_histogram(color = "black",fill = "grey") +
+    labs(title = "Distribution of NO2 Concentrations Relative to Super Region",
+         x = "NO2 Concentration (mol/m^2)",
+         y = "Number of Countries") +
+    theme_minimal() +
+     scale_x_continuous(breaks = seq(0,8E-5,0.5E-5)) +
+     scale_y_continuous(breaks = seq(0,12,2)) +
+    theme(axis.text.x = element_text(angle = 45,hjust=1)) +
+    facet_grid(Super.region~.)
+
+#Histogram, COVID cases, grouping by Super.region
+covid.NO2.df %>%
+    ggplot(aes(totcases.mil)) +
+    geom_histogram(color = "black",fill = "grey") +
+    labs(title = "Distribution of COVID Cases Relative to Super Region",
+         x = "COVID-19 Cases per Million",
+         y = "Number of Countries") +
+    theme_minimal() +
+     scale_x_continuous(breaks = seq(0, 179667.4,10000)) +
+     scale_y_continuous(breaks = seq(0,32,8)) +
+    theme(axis.text.x = element_text(angle = 45,hjust=1)) +
+    facet_grid(Super.region~.)
+
+#Histogram, COVID deaths, grouping by Super.region
+covid.NO2.df %>%
+    ggplot(aes(totdeaths.mil)) +
+    geom_histogram(color = "black",fill = "grey") +
+    labs(title = "Distribution of COVID Deaths Relative to Super Region",
+         x = "COVID-19 Deaths per Million",
+         y = "Number of Countries") +
+    theme_minimal() +
+     scale_x_continuous(breaks = seq(0,5820.087,500)) +
+     scale_y_continuous(breaks = seq(0,32,8)) +
+    theme(axis.text.x = element_text(angle = 45,hjust=1)) +
+    facet_grid(Super.region~.)
+
+#Boxplot, NO2, grouping by Super.region 
+covid.NO2.df %>%
+    ggplot(aes(Super.region,NO2_Concentration)) +
+    geom_boxplot() +
+    geom_jitter(color="red", size=0.4, alpha=0.9) +
+    labs(title = "Distribution of NO2 relative to Super Region",
+         x = "Super Region",
+         y = "NO2 Concentration (mol/m^2)") +
+    theme(axis.text.x = element_text(angle = 45,hjust=1)) +
+    scale_y_continuous(breaks = seq(0,8E-5,0.5E-5)) 
+
+#Boxplot, COVID cases, grouping by Super.region 
+covid.NO2.df %>%
+    ggplot(aes(Super.region,totcases.mil)) +
+    geom_boxplot() +
+    geom_jitter(color="red", size=0.4, alpha=0.9) +
+    labs(title = "Distribution of COVID Cases Relative to Super Region",
+         x = "Super Region",
+         y = "COVID-19 Cases per Million") +
+    theme(axis.text.x = element_text(angle = 45,hjust=1)) +
+    scale_y_continuous(breaks = seq(0, 179667.4,10000))
+
+#Boxplot, COVID deaths, grouping by Super.region 
+covid.NO2.df %>%
+    ggplot(aes(Super.region,totdeaths.mil)) +
+    geom_boxplot() +
+    geom_jitter(color="red", size=0.4, alpha=0.9) +
+    labs(title = "Distribution of COVID Deaths Relative to Super Region",
+         x = "Super Region",
+         y = "COVID-19 Deaths per Million") +
+    theme(axis.text.x = element_text(angle = 45,hjust=1)) +
+    scale_y_continuous(breaks = seq(0,5820.087,500))
+```
+
+####Bivariate analysis of NO2 concentrations and all continuous variables
+```{r, eval = TRUE}
+covid.NO2.df %>%
+    select(NO2_Concentration, totcases.mil, totdeaths.mil, pop.density, med.age, card.death, diab.prev, fem.smokers, male.smokers) %>% 
+    cor(use="pairwise.complete.obs") %>% 
+    pander
+
+#Visual representation of correlations.
+covid.NO2.df %>%
+    select(NO2_Concentration, totcases.mil, totdeaths.mil, pop.density, med.age, card.death, diab.prev, fem.smokers, male.smokers)  %>%
+    cor(use="pairwise.complete.obs") %>%
+    ggcorrplot(type = "lower", ggtheme = theme_minimal, colors = c("#6D9EC1","white","#E46726"),
+               show.diag = T,
+               lab = T, lab_size = 2, #shows correlation values and sets size of text
+               title = "Correlation Matrix for the covid.NO2 dataset",
+               legend.title = "Correlation Value",
+               outline.color = "white",
+               hc.order = T) #orders by variables most related
+               
+```
+
+####Bivariate graphs of NO2 concentrations and COVID-19 outcomes.
+```{r, eval = TRUE}
+#NO2 concentration vs COVID cases. 
+ggplot(data = covid.NO2.df, aes(x = NO2_Concentration, y = totcases.mil)) +
+  geom_point(color = "#333aff", alpha = 1) +
+  geom_smooth(color = "red") +
+  theme_bw() +
+  labs(x = "NO2 Concentration (mol/m^2)", y = "Total COVID-19 Cases per Million People") +
+  labs(title = "World COVID-19 Cases per Million People vs. NO2 Concentration") 
+cor(covid.NO2.df$totcases.mil, covid.NO2.df$NO2_Concentration, use = "complete.obs") 
+NO2.lm.cases <- lm(totcases.mil ~ NO2_Concentration, data = covid.NO2.df)
+summary.lm(NO2.lm.cases)
+confint(NO2.lm.cases) #Summary statistics for linear fit. 
+
+#NO2 concentration vs COVID deaths. 
+ggplot(data = covid.NO2.df, aes(x = NO2_Concentration, y = totdeaths.mil)) +
+  geom_point(color = "#333aff", alpha = 1) +
+  geom_smooth(color = "red") +
+  theme_bw() +
+  labs(x = "NO2 Concentration (mol/m^2)", y = "Total COVID-19 Deaths per Million People") +
+  labs(title = "World COVID-19 Deaths per Million People vs. NO2 Concentration") 
+cor(covid.NO2.df$totdeaths.mil, covid.NO2.df$NO2_Concentration, use = "complete.obs") 
+NO2.lm.deaths <- lm(totdeaths.mil ~ NO2_Concentration, data = covid.NO2.df,)
+summary.lm(NO2.lm.deaths)
+confint(NO2.lm.deaths) #Summary statistics for linear fit.
+
+regions.list <- c("High-income", "Latin America and Caribbean", "Sub-Saharan Africa", "North Africa and the Middle East", "South Asia", "Southeast Asia, East Asia, and Oceania", "Central Europe, Eastern Europe, and Central Asia")
+sub.regions.list <- c("High-income Asia Pacific", "High-income Australasia", "High-income North America", "High-income Southern Latin America", "High-income Western Europe", "Caribbean", "Central Latin America", "Tropical Latin America", "Andean Latin America", "Central sub-Saharan Africa", "Eastern sub-Saharan Africa", "Southern sub-Saharan Africa", "Western sub-Saharan Africa", "North Africa and the Middle East", "South Asia", "East Asia", "Oceania", "Southeast Asia", "Central Asia", "Central Europe", "Eastern Europe")
+
+#Function for bivariate analysis by region. 
+cases.NO2 <- function(x) { 
+                    covid.NO2.df %>% 
+                    filter(Super.region == x) %>%
+                    filter(!is.na(totdeaths.mil)) %>%
+                    filter(!is.na(NO2_Concentration)) %>%
+                    ggplot(aes(x = NO2_Concentration, y = totcases.mil)) +
+                        geom_point(color = "#333aff") +
+                        geom_smooth(color = "red") +
+                        geom_smooth(method = "lm", color = "purple") +
+                        theme_bw() +
+                        labs(x = "NO2 Concentration (mol/m^2)", y = "Total COVID-19 Cases per Million People") +
+                        labs(title = paste0("COVID-19 Cases per Million People in ", (Regions = x), " vs. NO2 Concentration"))
+} 
+NO2.lm.cases.reg <- function(x) {
+                        covid.NO2.df %>%
+                        filter(Super.region == x) %>%
+                        filter(!is.na(totdeaths.mil)) %>%
+                        filter(!is.na(NO2_Concentration)) %>%
+                        lm(totcases.mil ~ NO2_Concentration,.) %>%
+                        summary.lm()  
+} #Function for linear regression statistics to be included in for loop below. 
+
+for (i in regions.list) {
+   print(cases.NO2(i)) 
+   print(NO2.lm.cases.reg(i)) 
+} #Loops function for continents of interest. 
+
+
+deaths.NO2 <- function(x) { 
+                    covid.NO2.df %>% 
+                    filter(Super.region == x) %>% 
+                    filter(!is.na(totdeaths.mil)) %>%
+                    filter(!is.na(NO2_Concentration)) %>%
+                    ggplot(aes(x = NO2_Concentration, y = totdeaths.mil)) +
+                        geom_point(color = "#333aff") +
+                        geom_smooth(color = "red") +
+                        geom_smooth(method = "lm", color = "purple") +
+                        theme_bw() +
+                        labs(x = "NO2 Concentration (mol/m^2)", y = "Total COVID-19 Deaths per Million People") +
+                        labs(title = paste0("COVID-19 Deaths per Million People in ", (Regions = x), " vs. NO2 Concentration"))
+} 
+NO2.lm.deaths.reg <- function(x) {
+                        covid.NO2.df %>%
+                        filter(Super.region == x) %>%
+                        filter(!is.na(totdeaths.mil)) %>%
+                        filter(!is.na(NO2_Concentration)) %>%
+                        lm(totdeaths.mil ~ NO2_Concentration,.) %>%
+                        summary.lm() #Function for linear regression statistics to be included in for loop below. 
+}
+for (i in regions.list) {
+   print(deaths.NO2(i)) 
+   print(NO2.lm.deaths.reg(i)) 
+} #Loops function for continents of interest.
+```
+
+####Bivariate graphs of NO2 concentrations and other continuous variables.
+```{r, eval = TRUE}
+ #NO2 concentration vs population density. 
+ggplot(data = covid.NO2.df, aes(x = NO2_Concentration, y = pop.density)) +
+  geom_point(color = "#333aff", alpha = 1) +
+  geom_smooth(color = "red") +
+  theme_bw() +
+  labs(x = "NO2 Concentration (mol/m^2)", y = "Population Density") +
+  labs(title = "World Population Density vs. NO2 Concentration") 
+cor(covid.NO2.df$pop.density, covid.NO2.df$NO2_Concentration, use = "complete.obs") 
+NO2.lm.pop <- lm(pop.density ~ NO2_Concentration, data = covid.NO2.df,)
+summary.lm(NO2.lm.pop)
+confint(NO2.lm.pop) #Summary statistics for linear fit. 
+
+#NO2 concentration vs median age. 
+ggplot(data = covid.NO2.df, aes(x = NO2_Concentration, y = med.age)) +
+  geom_point(color = "#333aff", alpha = 1) +
+  geom_smooth(color = "red") +
+  theme_bw() +
+  labs(x = "NO2 Concentration (mol/m^2)", y = "Median Age") +
+  labs(title = "World Median Age by Country vs. NO2 Concentration") 
+cor(covid.NO2.df$med.age, covid.NO2.df$NO2_Concentration, use = "complete.obs") 
+NO2.lm.age <- lm(med.age ~ NO2_Concentration, data = covid.NO2.df,)
+summary.lm(NO2.lm.age)
+confint(NO2.lm.age) #Summary statistics for linear fit.
+
+#NO2 concentration vs GDP per capita. 
+ggplot(data = covid.NO2.df, aes(x = NO2_Concentration, y = gdp.cap)) +
+  geom_point(color = "#333aff", alpha = 1) +
+  geom_smooth(color = "red") +
+  theme_bw() +
+  labs(x = "NO2 Concentration (mol/m^2)", y = "GDP per Capita") +
+  labs(title = "World GDP per Capita vs. NO2 Concentration") 
+cor(covid.NO2.df$gdp.cap, covid.NO2.df$NO2_Concentration, use = "complete.obs") 
+NO2.lm.gdp <- lm(gdp.cap ~ NO2_Concentration, data = covid.NO2.df,)
+summary.lm(NO2.lm.gdp)
+confint(NO2.lm.gdp) #Summary statistics for linear fit.
+
+#NO2 concentration vs cardiovascular death. 
+ggplot(data = covid.NO2.df, aes(x = NO2_Concentration, y = card.death)) +
+  geom_point(color = "#333aff", alpha = 1) +
+  geom_smooth(color = "red") +
+  theme_bw() +
+  labs(x = "NO2 Concentration (mol/m^2)", y = "Cardiovascular Death Rates") +
+  labs(title = "World Cardiovascular Death Rates vs. NO2 Concentration") 
+cor(covid.NO2.df$card.death, covid.NO2.df$NO2_Concentration, use = "complete.obs") 
+NO2.lm.card.death <- lm(card.death ~ NO2_Concentration, data = covid.NO2.df,)
+summary.lm(NO2.lm.card.death)
+confint(NO2.lm.card.death) #Summary statistics for linear fit.
+
+#NO2 concentration vs diabetes prevalence. 
+ggplot(data = covid.NO2.df, aes(x = NO2_Concentration, y = diab.prev)) +
+  geom_point(color = "#333aff", alpha = 1) +
+  geom_smooth(color = "red") +
+  theme_bw() +
+  labs(x = "NO2 Concentration (mol/m^2)", y = "Diabetes Prevalence Rates") +
+  labs(title = "World Diabetes Prevalence Rates vs. NO2 Concentration") 
+cor(covid.NO2.df$diab.prev, covid.NO2.df$NO2_Concentration, use = "complete.obs") 
+NO2.lm.diab <- lm(diab.prev ~ NO2_Concentration, data = covid.NO2.df,)
+summary.lm(NO2.lm.diab)
+confint(NO2.lm.diab) #Summary statistics for linear fit.
+```
+
+####Multivariate graphs of COVID outcomes vs NO2 concentrations. 
 ```{r, eval = TRUE}
 #NO2 concentration vs COVID cases. 
 ggplot(data = covid.NO2.df, aes(x = NO2_Concentration, y = totcases.mil)) +
@@ -275,54 +694,52 @@ cor(covid.NO2.df$totdeaths.mil, covid.NO2.df$NO2_Concentration, use = "complete.
 NO2.lm.deaths <- lm(totdeaths.mil ~ NO2_Concentration + gdp.cap  + pop.density + med.age, data = covid.NO2.df,)
 summary.lm(NO2.lm.deaths)
 confint(NO2.lm.deaths) #Summary statistics for linear fit.
-```
 
-####Continent Analysis with COVID outcomes. 
-```{r, eval = TRUE}
+#Function for multivariate analysis by Super.region. 
 cases.NO2 <- function(x) { 
                     covid.NO2.df %>% 
-                    filter(continent == x) %>%
+                    filter(Super.region == x) %>%
                     ggplot(aes(x = NO2_Concentration, y = totcases.mil)) +
                         geom_point(color = "#333aff") +
                         geom_smooth(color = "red") +
                         geom_smooth(method = "lm", color = "purple") +
                         theme_bw() +
                         labs(x = "NO2 Concentration (mol/m^2)", y = "Total COVID-19 Cases per Million People") +
-                        labs(title = paste0("COVID-19 Cases per Million People in ", (continent = x), " vs. NO2 Concentration"))
+                        labs(title = paste0("COVID-19 Cases per Million People in ", (Super.region = x), " vs. NO2 Concentration"))
 } 
-NO2.lm.cases.cont <- function(x) {
+NO2.lm.cases.reg <- function(x) {
                         covid.NO2.df %>%
-                        filter(continent == x) %>%
+                        filter(Super.region == x) %>%
                         lm(totcases.mil ~ NO2_Concentration + gdp.cap  + pop.density + med.age,.) %>%
                         summary.lm()  
 } #Function for linear regression statistics to be included in for loop below. 
 
-for (i in c("North America", "Europe", "Asia", "Africa", "Oceania", "South America")) {
+for (i in regions.list) {
    print(cases.NO2(i)) 
-   print(NO2.lm.cases.cont(i)) 
+   print(NO2.lm.cases.reg(i)) 
 } #Loops function for continents of interest. 
 
 deaths.NO2 <- function(x) { 
                     covid.NO2.df %>% 
-                    filter(continent == x) %>%
+                    filter(Super.region == x) %>%
                     ggplot(aes(x = NO2_Concentration, y = totdeaths.mil)) +
                         geom_point(color = "#333aff") +
                         geom_smooth(color = "red") +
                         geom_smooth(method = "lm", color = "purple") +
                         theme_bw() +
                         labs(x = "NO2 Concentration (mol/m^2)", y = "Total COVID-19 Deaths per Million People") +
-                        labs(title = paste0("COVID-19 Deaths per Million People in ", (continent = x), " vs. NO2 Concentration"))
+                        labs(title = paste0("COVID-19 Deaths per Million People in ", (Super.region = x), " vs. NO2 Concentration"))
 } 
-NO2.lm.deaths.cont <- function(x) {
+NO2.lm.deaths.reg <- function(x) {
                         covid.NO2.df %>%
-                        filter(continent == x) %>%
+                        filter(Super.region == x) %>%
                         lm(totdeaths.mil ~ NO2_Concentration + gdp.cap  + pop.density + med.age,.) %>%
                         summary.lm() #Function for linear regression statistics to be included in for loop below. 
 }
-for (i in c("North America", "Europe", "Asia", "Africa", "Oceania", "South America")) {
+for (i in regions.list) {
    print(deaths.NO2(i)) 
-   print(NO2.lm.deaths.cont(i)) 
-} #Loops function for continents of interest. 
+   print(NO2.lm.deaths.reg(i)) 
+} #Loops function for continents of interest.
 ```
 
 ###Correlation analysis: United States, satellite vs. ground EPA. 
@@ -331,8 +748,8 @@ for (i in c("North America", "Europe", "Asia", "Africa", "Oceania", "South Ameri
 #Getting satellite data specifically for this time frame. 
 July_Oct2018.sat.r <- raster('US_ground_NO2/US_NO2_2018-07-01_start.tif') %>%
   flip(direction='y')
-July_Oct2018.sat.r <- crop(July_Oct2018.sat.r, extent(us.shp))
-July_Oct2018.sat.r <- mask(July_Oct2018.sat.r, us.shp)
+July_Oct2018.sat.r <- crop(July_Oct2018.sat.r, extent(`United States.shp`))
+July_Oct2018.sat.r <- mask(July_Oct2018.sat.r, `United States.shp`)
 
 #Direct conversion from NO2 raster to data frame while filtering by shapefile. 
 continental.US.fxn <- function(x) {
@@ -431,21 +848,21 @@ plot(us.shp, add = TRUE)
 ```
 
 ###Time-analysis: NO2 changes during the COVID-19 pandemic.
-####World time analysis: interrupted series time analysis data preparation. 
+####US time analysis: interrupted series time analysis data preparation. 
 ```{r, eval = TRUE}
 #US first to create code; others later. 
 #Use function in other NO2_Exploratory Analysis file to filter out each week from Jan-Dec 2019 and Jan-Dec 2020 for comparison.
 
 #Used code:
-`gsutil -m cp \`
-` >   "file names" \`
-` >   COVID-19_NO2/time_analysis_2020`
+# gsutil -m cp \
+# >   "file names" \
+# >   COVID-19_NO2/US_time_analysis_2020
 
 # in terminal to copy all files from google cloud storage into folders in working directory. 
 
 #2019 data. 
 #Creates list of raster files from folder to call in function. 
-rastlist.2019.left <- list.files(path = "time_analysis_2019", pattern='.tif$', 
+rastlist.2019 <- list.files(path = "US_time_analysis_2019", pattern='.tif$', 
 all.files=TRUE, full.names=FALSE)
 
 #Creates list of dates to call in function. 
@@ -453,7 +870,7 @@ dates.2019 <- seq(as.Date("2018-12-31"), as.Date("2019-12-29"), by=7) #List of d
 
 #Function to make data frame for weekly average NO2 concentration. 
 read.fxn <- function(x, y) {
-  r <- raster(paste0("time_analysis_2019/", x))
+  r <- raster(paste0("US_time_analysis_2019/", x))
   r.vals <- raster::extract(r, `United States.shp`)
   r.mean <- lapply(r.vals, FUN=mean, na.rm = TRUE)
   final.df <- data.frame(`United States.shp`@data, r.mean)  
@@ -474,7 +891,7 @@ US.2019.weekly.df$Date <- paste0("2020-", US.2019.weekly.df$Date)
 
 #2020 data.  
 #Creates list of raster files from folder to call in function. 
-rastlist.2020 <- list.files(path = "time_analysis_2020", pattern='.tif$', 
+rastlist.2020 <- list.files(path = "US_time_analysis_2020", pattern='.tif$', 
 all.files=TRUE, full.names=FALSE)
 
 #Creates list of dates to call in function. 
@@ -482,7 +899,7 @@ dates.2020 <- seq(as.Date("2019-12-30"), as.Date("2021-01-03"), by=7) #List of d
 
 #Function to make data frame for weekly average NO2 concentration. 
 read.fxn <- function(x, y) {
-  r <- raster(paste0("time_analysis_2020/", x))
+  r <- raster(paste0("US_time_analysis_2020/", x))
   r.vals <- raster::extract(r, `United States.shp`)
   r.mean <- lapply(r.vals, FUN=mean, na.rm = TRUE)
   final.df <- data.frame(`United States.shp`@data, r.mean)   
@@ -503,7 +920,7 @@ US.weekly.df$Date <- as.Date(US.weekly.df$Date)
 US.weekly.df$Period <- as.factor(US.weekly.df$Period)
 ```
 
-####World time analysis: interrupted series time analysis plots.
+####US time analysis: interrupted series time analysis plots.
 ```{r, fig.width=20, fig.height=4, eval = TRUE}
 ggplot(US.weekly.df, aes(x = Date, y = NO2_Concentration, group = Period, color = Period)) +
   geom_line(size = 0.75) + 
@@ -537,12 +954,117 @@ ylim(0, 3E-5) +
   theme_bw() + 
   scale_alpha_manual(values = c(0.4, 1.1)) + 
   scale_color_manual(values = c("gray", "blue", "black")) +
-  ggsave("time_series.pdf")
+  ggsave("US_time_series.pdf")
+`United States.shp`
+```
+
+####China time analysis: interrupted series time analysis data preparation. 
+```{r, eval = TRUE}
+#Use function in other NO2_Exploratory Analysis file to filter out each week from Jan-Dec 2019 and Jan-Dec 2020 for comparison.
+
+#Used code:
+# gsutil -m cp \
+# >   "file names" \
+# >   COVID-19_NO2/China_time_analysis_2020
+
+# in terminal to copy all files from google cloud storage into folders in working directory. 
+
+#2019 data. 
+#Creates list of raster files from folder to call in function. 
+rastlist.2019 <- list.files(path = "China_time_analysis_2019", pattern='.tif$', 
+all.files=TRUE, full.names=FALSE)
+
+#Creates list of dates to call in function. 
+dates.2019 <- seq(as.Date("2018-11-05"), as.Date("2019-11-10"), by=7) #List of dates starting Dec 31 2018. 
+
+#Function to make data frame for weekly average NO2 concentration. 
+read.fxn <- function(x, y) {
+  r <- raster(paste0("China_time_analysis_2019/", x))
+  r.vals <- raster::extract(r, `China.shp`)
+  r.mean <- lapply(r.vals, FUN=mean, na.rm = TRUE)
+  final.df <- data.frame(`China.shp`@data, r.mean)  
+  Date <- as.factor(as.Date(dates.2019[[y]] %m+% years(1))) #Adds 1 year to date to match x axis of 2020 dates.
+  Week <- paste0(as.character(as.Date(dates.2019[[y]])), " to ", as.character(as.Date(dates.2019[[y]]) + 6)) 
+  Period <- rep("2018-2019", length.out = nrow(final.df)) 
+  China.2019.weekly <- cbind(final.df, Date, Week, Period) 
+  rm(r.mean, r.vals)
+  names(China.2019.weekly)[12] <- "NO2_Concentration"
+  China.2019.weekly <- China.2019.weekly %>% select(Period, Date, Week, NO2_Concentration)
+}
+
+x <- rastlist.2019
+y <- 1:length(dates.2019)
+China.2019.weekly.df <- purrr::map2_dfr(x, y, read.fxn) 
+China.2019.weekly.df$Date <- paste0("2020-", China.2019.weekly.df$Date)
+
+#2020 data.  
+#Creates list of raster files from folder to call in function. 
+rastlist.2020 <- list.files(path = "China_time_analysis_2020", pattern='.tif$', 
+all.files=TRUE, full.names=FALSE)
+
+#Creates list of dates to call in function. 
+dates.2020 <- seq(as.Date("2019-11-04"), as.Date("2020-11-08"), by=7) #List of dates starting Dec 30th 2019. 
+
+#Function to make data frame for weekly average NO2 concentration. 
+read.fxn <- function(x, y) {
+  r <- raster(paste0("China_time_analysis_2020/", x))
+  r.vals <- raster::extract(r, `China.shp`)
+  r.mean <- lapply(r.vals, FUN=mean, na.rm = TRUE)
+  final.df <- data.frame(`China.shp`@data, r.mean)   
+  Date <- as.factor(as.Date(dates.2020[[y]]))
+  Week <- paste0(as.character(as.Date(dates.2020[[y]])), " to ", as.character(as.Date(dates.2020[[y]]) + 6)) 
+  Period <- rep("2019-2020", length.out = nrow(final.df)) 
+  China.2020.weekly <- cbind(final.df, Date, Week, Period)     # Add new column to data
+  rm(r.mean, r.vals)
+  names(China.2020.weekly)[12] <- "NO2_Concentration"
+  China.2020.weekly <- China.2020.weekly %>% select(Period, Date, Week, NO2_Concentration)
+}
+
+x <- rastlist.2020
+y <- 1:length(dates.2020)
+China.2020.weekly.df <- purrr::map2_dfr(x, y, read.fxn) 
+China.weekly.df <- rbind(China.2019.weekly.df, China.2020.weekly.df) 
+China.weekly.df$Date <- as.Date(China.weekly.df$Date)
+China.weekly.df$Period <- as.factor(China.weekly.df$Period)
+max(China.weekly.df$NO2_Concentration)
+```
+
+####China time analysis: interrupted series time analysis plots.
+```{r, fig.width=20, fig.height=4, eval = TRUE}
+ggplot(China.weekly.df, aes(x = Date, y = NO2_Concentration, group = Period, color = Period)) +
+  geom_line(size = 0.75) + 
+  labs(fill = "Year of Measured Pollution") +
+  ggtitle("China NO2 in 2019 vs 2020") +
+  ylab("NO2 Concentration (mol/m^2)") +
+  scale_x_date(date_labels = "%b-%Y",date_breaks = "1 month",limits=c(as.Date("2019-11-01",format="%Y-%m-%d"),as.Date("2020-11-10",format="%Y-%m-%d"))) +
+ylim(0,4.7E-5) +
+  theme_bw() +
+  theme(legend.key.size = unit(1, 'cm'),
+        legend.title = element_text(size=12),
+        legend.text = element_text(size=10),
+        axis.title = element_text(size = 10),
+        axis.text.x = element_text(size=10, angle=45, hjust=1),
+        axis.text.y = element_text(size=10)) +
+  
+  #Pre-lockdown
+  geom_rect(data=China.weekly.df,aes(xmin=as.Date("2019-11-01",format="%Y-%m-%d"),xmax=as.Date("2020-01-23",format="%Y-%m-%d"),ymin=4.6E-5,ymax=4.7E-5),fill = "#c0c0c0",color = NA, alpha=0.02) +
+  geom_text(data=China.weekly.df,aes(x=as.Date("2019-12-15"),y=4.65E-5),label="Pre-Lockdown",color = "black", size = 2) +
+  geom_vline(data=China.weekly.df,xintercept = as.Date("2020-01-23",format="%Y-%m-%d"),linetype="dashed",colour="black",size=0.75,alpha=0.8) + 
+  #Lockdown 1
+  geom_rect(data=China.weekly.df,aes(xmin=as.Date("2020-01-23",format="%Y-%m-%d"),xmax=as.Date("2020-04-08",format="%Y-%m-%d"),ymin=4.6E-5,ymax=4.7E-5),fill = "#fa9796",color = NA,alpha=0.02) +
+  geom_text(data=China.weekly.df,aes(x=as.Date("2020-03-01"),y=4.65E-5),label="Lockdown 1", color = "black", size = 2) +
+  geom_vline(data=China.weekly.df,xintercept=as.Date("2020-04-08",format="%Y-%m-%d"),linetype="dashed",colour="black",size=0.75,alpha=0.8) + 
+  #Re-opening Green PHASE
+  geom_rect(data=China.weekly.df,aes(xmin=as.Date("2020-04-08",format="%Y-%m-%d"),xmax=as.Date("2020-11-08",format="%Y-%m-%d"), ymin=4.6E-5,ymax=4.7E-5),fill = "#b5dea5",color = NA,alpha=0.02) +
+  geom_text(data=China.weekly.df,aes(x=as.Date("2020-08-01"),y=4.65E-5),label="Re-Opening", color = "black", size = 2) +
+  scale_alpha_manual(values = c(0.4, 1.1)) + 
+  scale_color_manual(values = c("gray", "blue", "black")) +
+  ggsave("China_time_series.pdf")
 ```
 
 ####Attempt to do interrupted time series analysis with all world data. 
 ```{r, eval = TRUE}
-#Use function in other NO2_Exploratory Analysis file to filter out each week from Jan-Dec 2019 and Jan-Dec 2020 for comparison.
+#Use function in other NO2_Exploratory Analysis file to filter out each week from Jan-Dec 2019 and Jan-Dec 2020 for comparison. Unsuccessful so far: need to remove country boundaries from shapefile. 
 
 #Used code:
 #gsutil -m cp \
