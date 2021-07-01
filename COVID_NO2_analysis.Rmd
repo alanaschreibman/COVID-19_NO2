@@ -20,7 +20,7 @@ knitr::opts_chunk$set(warning = FALSE, message = FALSE)
 ```{r, eval = TRUE}
 #Load libraries needed. 
 library(easypackages)
-libraries("rgdal", "gdalUtils", "raster", "maptools", "ggplot2", "cowplot", "dplyr", "sp", "sf", "rgdal", "stringr", "RColorBrewer", "ggcorrplot", "pander", "forcats", "ggsn")
+libraries("rgdal", "gdalUtils", "raster", "maptools", "tigris", "ggplot2", "cowplot", "dplyr", "sp", "sf", "rgdal", "stringr", "RColorBrewer", "ggcorrplot", "pander", "forcats", "ggsn", "mapproj", "rlist")
 ```
 
 ###Merging NO2 data with COVID data for analysis.  
@@ -37,8 +37,6 @@ wrld_simpl@data[["NAME"]]
 plot(wrld_simpl) 
 us.shp <- wrld_simpl[wrld_simpl$NAME=="United States", ]
 plot(us.shp)
-
-wrld_simpl[wrld_simpl$NAME=="Israel", ]
 
 #More exploration on raster NO2 file. 
 head(continental.US.NO2.r)
@@ -208,13 +206,82 @@ plot(wrld_simpl, add = TRUE)
 
 ####Preparing data for world analysis. 
 ```{r, eval = TRUE}
-country.list <- as.character(wrld_simpl@data$NAME)
- 
+
+---
+wrld_simpl@data$NAME <- as.character(wrld_simpl@data$NAME)
+
+#Changing shapefile country names to match COVID dataset:
+wrld_simpl@data$NAME[wrld_simpl$NAME=="Brunei Darussalam"] <- "Brunei"
+wrld_simpl@data$NAME[wrld_simpl$NAME=="Czech Republic"] <- "Czechia"
+wrld_simpl@data$NAME[wrld_simpl$NAME=="Democratic Republic of the Congo"] <- "Democratic Republic of Congo"
+wrld_simpl@data$NAME[wrld_simpl$NAME=="Faroe Islands"] <- "Faeroe Islands"
+wrld_simpl@data$NAME[wrld_simpl$NAME=="Iran (Islamic Republic of)"] <- "Iran"
+wrld_simpl@data$NAME[wrld_simpl$NAME=="Lao People's Democratic Republic"] <- "Laos"
+wrld_simpl@data$NAME[wrld_simpl$NAME=="Libyan Arab Jamahiriya"] <- "Libya"
+wrld_simpl@data$NAME[wrld_simpl$NAME=="Republic of Moldova"] <- "Moldova"
+wrld_simpl@data$NAME[wrld_simpl$NAME=="Burma"] <- "Myanmar"
+wrld_simpl@data$NAME[wrld_simpl$NAME=="Korea, Republic of"] <- "South Korea"
+wrld_simpl@data$NAME[wrld_simpl$NAME=="Korea, Democratic People's Republic of"] <- "North Korea"
+wrld_simpl@data$NAME[wrld_simpl$NAME=="Syrian Arab Republic"] <- "Syria"
+wrld_simpl@data$NAME[wrld_simpl$NAME=="The former Yugoslav Republic of Macedonia"] <- "North Macedonia"
+wrld_simpl@data$NAME[wrld_simpl$NAME=="Macau"] <- "Macao"
+wrld_simpl@data$NAME[wrld_simpl$NAME=="Micronesia, Federated States of"] <- "Micronesia (country)"
+wrld_simpl@data$NAME[wrld_simpl$NAME=="Timor-Leste"] <- "Timor"
+wrld_simpl@data$NAME[wrld_simpl$NAME=="Holy See (Vatican City)"] <- "Vatican"
+wrld_simpl@data$NAME[wrld_simpl$NAME=="Viet Nam"] <- "Vietnam"
+wrld_simpl@data$NAME[wrld_simpl$NAME=="Wallis and Futuna Islands"] <- "Wallis and Futuna"
+
+#Missing from shapefiles but in OWID data: Kosovo, Tanzania, Eswatini
+owid.countries$location[!(owid.countries$location %in% wrld_simpl@data$NAME)]
+#Missing from OWID data but in shapefiles: 
+wrld_simpl@data$NAME[!(wrld_simpl@data$NAME%in% owid.countries$location)]
+
+#Function to extract mean NO2 values by country shapefile. 
+extraction.fxn <- function(x) {
+  r.vals <- raster::extract(world.NO2.r, wrld_simpl[wrld_simpl$NAME==as.character(x), ])
+  r.mean <- lapply(r.vals, FUN=mean, na.rm = TRUE)
+  final.df <- data.frame(wrld_simpl@data[wrld_simpl$NAME==as.character(x), ], r.mean)  
+  rm(r.mean, r.vals)
+  names(final.df)[5] <- "location" 
+  names(final.df)[6] <- "Area" 
+  names(final.df)[10] <- "Longitude" 
+  names(final.df)[11] <- "Latitude" 
+  names(final.df)[12] <- "NO2_Concentration"
+  final.df <- final.df %>% dplyr::select(location, Area, Longitude, Latitude, NO2_Concentration)
+}
+
+#Extracting mean NO2 values and adding to coordinates data to make final data frame.
+country.shp.list <- wrld_simpl@data$NAME
+
+total.df = data.frame()
+for (i in country.shp.list) {
+    # vector output
+    country.df <- extraction.fxn(i) 
+    # add vector to premade dataframe
+    df <- data.frame(country.df)
+    total.df <- rbind(total.df,df)
+}
+
+#Read in IHME regions data. 
+IHME.regions.df <- read.csv(file = 'IHME_regions.csv', header = TRUE) 
+IHME.regions.df <- IHME.regions.df %>% rename(location = Countries) %>% dplyr::select("Super.region", "Regions", "location")
+
+#Merged geospatial data set with COVID data (variables come from COVID exploratory analysis RMD file). 
+covid.NO2.df <- right_join(IHME.regions.df, total.df, by = "location")
+covid.NO2.df <- full_join(covid.NO2.df, owid.countries, by = "location")
+covid.NO2.df$Regions <- as.factor(covid.NO2.df$Regions)
+covid.NO2.df$Super.region <- as.factor(covid.NO2.df$Super.region)
+---
+  
+country.owid.list <- list(owid.countries$location)
+country.owid.list.shp <- list(paste0(owid.countries$location, ".shp"))
+
 countries.shp.fxn <- function(x) {
   wrld_simpl[wrld_simpl$NAME==x, ]
 }
+
 #Makes shapefile for each country from world shapefile. 
-for(i in country.list){
+for(i in country.shp.list){
   assign(paste0(i, ".shp"), countries.shp.fxn(i)) 
 }
 
@@ -245,6 +312,9 @@ Czechia.shp <- `Czech Republic.shp`
   `Democratic Republic of Congo.shp`$NAME <- as.character(`Democratic Republic of Congo.shp`$NAME)
   `Democratic Republic of Congo.shp`@data[1,5] <- sub("Democratic Republic of the Congo", "Democratic Republic of Congo", `Democratic Republic of Congo.shp`@data[1,5])
   rm(`Democratic Republic of the Congo.shp`)
+`Faeroe Islands.shp` <- `Faroe Islands.shp`
+  `Faeroe Islands.shp`@data[1,5] <- sub("Faroe Islands.shp", "Faeroe Islands.shp", `Faeroe Islands.shp`@data[1,5])
+  rm(`Faroe Islands.shp`)
 Iran.shp <- `Iran (Islamic Republic of).shp`
   Iran.shp$NAME <- as.character(Iran.shp$NAME) 
   Iran.shp@data$NAME[Iran.shp@data$NAME == "Iran (Islamic Republic of)"] <- "Iran"
@@ -273,10 +343,6 @@ Myanmar.shp <- Burma.shp
   `North Korea.shp`$NAME <- as.character(`North Korea.shp`$NAME) 
   `North Korea.shp`@data[1,5] <- sub("Korea, Democratic People's Republic of", "North Korea",`North Korea.shp`@data[1,5])
   rm(`Korea, Democratic People's Republic of.shp`)
-`South Sudan.shp` <- `Sudan.shp`
-  `South Sudan.shp`$NAME <- as.character(`South Sudan.shp`$NAME) 
-  `South Sudan.shp`@data[1,5] <- sub("Sudan", "South Sudan",`South Sudan.shp`@data[1,5])
-  rm(Sudan.shp)
 `Syria.shp` <- `Syrian Arab Republic.shp`
   Syria.shp$NAME <- as.character(Syria.shp$NAME) 
   Syria.shp@data[1,5] <- sub("Syrian Arab Republic", "Syria", Syria.shp@data[1,5])
@@ -284,7 +350,11 @@ Myanmar.shp <- Burma.shp
 `North Macedonia.shp` <- `The former Yugoslav Republic of Macedonia.shp`
   `North Macedonia.shp`$NAME <- as.character(`North Macedonia.shp`$NAME) 
   `North Macedonia.shp`@data[1,5] <- sub("The former Yugoslav Republic of Macedonia", "North Macedonia", `North Macedonia.shp`@data[1,5])
-  rm(`The Former Yugoslav Republic of Macedonia.shp`)
+  rm(`The former Yugoslav Republic of Macedonia.shp`)
+Macao.shp <- Macau.shp
+  Macao.shp$NAME <- as.character(Macao.shp$NAME) 
+  Macao.shp@data[1,5] <- sub("Macao", "Macao", Macao.shp@data[1,5])
+  rm(`Macau.shp`)
 `Micronesia (country).shp` <- `Micronesia, Federated States of.shp`
   `Micronesia (country).shp`$NAME <- as.character(`Micronesia (country).shp`$NAME) 
   `Micronesia (country).shp`@data$NAME[`Micronesia (country).shp`@data$NAME == "Micronesia, Federated States of"] <- "Micronesia (country)"  
@@ -301,11 +371,15 @@ Vietnam.shp <- `Viet Nam.shp`
   Vietnam.shp$NAME <- as.character(Vietnam.shp$NAME) 
   Vietnam.shp@data[1,5] <- sub("Viet Nam", "Vietnam", Vietnam.shp@data[1,5])
   rm(`Viet Nam.shp`)
+`Wallis and Futuna.shp` <- `Wallis and Futuna Islands.shp`
+  `Wallis and Futuna.shp`$NAME <- as.character(`Wallis and Futuna.shp`$NAME) 
+  `Wallis and Futuna.shp`@data[1,5] <- sub("Wallis and Futuna Islands.shp", "Wallis and Futuna.shp", `Wallis and Futuna.shp`@data[1,5])
+  rm(`Wallis and Futuna Islands.shp`)
 
 #Extracting mean NO2 values and adding to coordinates data to make final data frame.
   #Missing from shapefiles: Kosovo, Tanzania, Eswatini
 total.df = data.frame()
-for (i in c(Afghanistan.shp, Albania.shp, Algeria.shp, Andorra.shp, Angola.shp, `Antigua and Barbuda.shp`, Argentina.shp, Armenia.shp, Australia.shp, Austria.shp, Azerbaijan.shp, Bahamas.shp, Bahrain.shp, Bangladesh.shp, Barbados.shp, Belarus.shp, Belgium.shp, Belize.shp, Benin.shp, Bhutan.shp, Bolivia.shp, `Bosnia and Herzegovina.shp`, Botswana.shp, Brazil.shp, Brunei.shp, Bulgaria.shp, `Burkina Faso.shp`, Burundi.shp, Cambodia.shp, Cameroon.shp, Canada.shp, `Cape Verde.shp`, `Central African Republic.shp`, Chad.shp, Chile.shp, China.shp, Colombia.shp, Comoros.shp, Congo.shp, `Costa Rica.shp`, `Cote d'Ivoire.shp`, Croatia.shp, Cuba.shp, Cyprus.shp, Czechia.shp, `Democratic Republic of Congo.shp`, Denmark.shp, Djibouti.shp, Dominica.shp, `Dominican Republic.shp`, Ecuador.shp, Egypt.shp, `El Salvador.shp`, `Equatorial Guinea.shp`, Eritrea.shp, Estonia.shp, Ethiopia.shp, Fiji.shp, Finland.shp, France.shp, Gabon.shp, Gambia.shp, Georgia.shp, Germany.shp, Ghana.shp, Greece.shp, Grenada.shp, Guatemala.shp, Guinea.shp, `Guinea-Bissau.shp`, Guyana.shp, Haiti.shp, Honduras.shp, `Hong Kong.shp`, Hungary.shp, Iceland.shp, India.shp, Indonesia.shp, Iran.shp, Ireland.shp, Israel.shp, Italy.shp, Jamaica.shp, Japan.shp, Jordan.shp, Kazakhstan.shp, Kenya.shp, Kuwait.shp, Kyrgyzstan.shp, Laos.shp, Latvia.shp, Lebanon.shp, Lesotho.shp, Liberia.shp, Libya.shp, Liechtenstein.shp, Lithuania.shp, Luxembourg.shp, Madagascar.shp, Malawi.shp, Malaysia.shp, Maldives.shp, Mali.shp, Malta.shp, Mauritania.shp, Mauritius.shp, Mexico.shp, `Micronesia (country).shp`, Moldova.shp, Monaco.shp, Mongolia.shp, Montenegro.shp, Morocco.shp, Mozambique.shp, Myanmar.shp, Namibia.shp, Nepal.shp, Netherlands.shp, `New Zealand.shp`, Nicaragua.shp, Niger.shp, Nigeria.shp, `North Macedonia.shp`, Norway.shp, Oman.shp, Pakistan.shp, Palestine.shp, Panama.shp, `Papua New Guinea.shp`, Paraguay.shp, Peru.shp, Philippines.shp, Poland.shp, Portugal.shp, Qatar.shp, Romania.shp, Russia.shp, Rwanda.shp, `Saint Kitts and Nevis.shp`, `Saint Lucia.shp`, `Saint Vincent and the Grenadines.shp`, `San Marino.shp`, `Sao Tome and Principe.shp`, `Saudi Arabia.shp`, Senegal.shp, Serbia.shp, Seychelles.shp, `Sierra Leone.shp`, Singapore.shp, Slovakia.shp, Slovenia.shp, Somalia.shp, `South Africa.shp`, `South Korea.shp`, `South Sudan.shp`, Spain.shp, `Sri Lanka.shp`, `South Sudan.shp`, Suriname.shp, Sweden.shp, Switzerland.shp, Syria.shp, Taiwan.shp, Tajikistan.shp, Thailand.shp, Timor.shp, Togo.shp, `Trinidad and Tobago.shp`, Tunisia.shp, Turkey.shp, Uganda.shp, Ukraine.shp, `United Arab Emirates.shp`, `United Kingdom.shp`, `United States.shp`, Uruguay.shp, Uzbekistan.shp, Vatican.shp, Venezuela.shp, Vietnam.shp, Yemen.shp, Zambia.shp, Zimbabwe.shp)) {
+for (i in c(Afghanistan.shp, Albania.shp, Algeria.shp, Andorra.shp, Angola.shp, `Antigua and Barbuda.shp`, Argentina.shp, Armenia.shp, Aruba.shp, Australia.shp, Austria.shp, Azerbaijan.shp, Bahamas.shp, Bahrain.shp, Bangladesh.shp, Barbados.shp, Belarus.shp, Belgium.shp, Belize.shp, Benin.shp, Bermuda.shp, Bhutan.shp, Bolivia.shp, `Bosnia and Herzegovina.shp`, Botswana.shp, Brazil.shp, Brunei.shp, Bulgaria.shp, `Burkina Faso.shp`, Burundi.shp, Cambodia.shp, Cameroon.shp, Canada.shp, `Cape Verde.shp`, `Cayman Islands.shp`, `Central African Republic.shp`, Chad.shp, Chile.shp, China.shp, Colombia.shp, Comoros.shp, Congo.shp, `Cook Islands.shp`, `Costa Rica.shp`, `Cote d'Ivoire.shp`, Croatia.shp, Cuba.shp, Cyprus.shp, Czechia.shp, `Democratic Republic of Congo.shp`, Denmark.shp, Djibouti.shp, Dominica.shp, `Dominican Republic.shp`, Ecuador.shp, Egypt.shp, `El Salvador.shp`, `Equatorial Guinea.shp`, Eritrea.shp, Estonia.shp, Ethiopia.shp, `Faeroe Islands.shp`, Fiji.shp, Finland.shp, France.shp, `French Polynesia.shp`, Gabon.shp, Gambia.shp, Georgia.shp, Germany.shp, Ghana.shp, Gibraltar.shp, Greece.shp, Grenada.shp, Guatemala.shp, Guernsey.shp, Guinea.shp, `Guinea-Bissau.shp`, Guyana.shp, Haiti.shp, Honduras.shp, `Hong Kong.shp`, Hungary.shp, Iceland.shp, India.shp, Indonesia.shp, Iran.shp, Iraq.shp, Ireland.shp, `Isle of Man.shp`, Israel.shp, Italy.shp, Jamaica.shp, Japan.shp, Jordan.shp, Kazakhstan.shp, Kenya.shp, Kiribati.shp, Kuwait.shp, Kyrgyzstan.shp, Laos.shp, Latvia.shp, Lebanon.shp, Lesotho.shp, Liberia.shp, Libya.shp, Liechtenstein.shp, Lithuania.shp, Luxembourg.shp, Macao.shp, Madagascar.shp, Malawi.shp, Malaysia.shp, Maldives.shp, Mali.shp, Malta.shp, `Marshall Islands.shp`, Mauritania.shp, Mauritius.shp, Mexico.shp, `Micronesia (country).shp`, Moldova.shp, Monaco.shp, Mongolia.shp, Montenegro.shp, Morocco.shp, Mozambique.shp, Myanmar.shp, Namibia.shp, Nepal.shp, Netherlands.shp, `New Zealand.shp`, Nicaragua.shp, Niger.shp, Nigeria.shp, `North Macedonia.shp`, Norway.shp, Oman.shp, Pakistan.shp, Palestine.shp, Panama.shp, `Papua New Guinea.shp`, Paraguay.shp, Peru.shp, Philippines.shp, Poland.shp, Portugal.shp, Qatar.shp, Romania.shp, Russia.shp, Rwanda.shp, `Saint Kitts and Nevis.shp`, `Saint Lucia.shp`, `Saint Vincent and the Grenadines.shp`, Samoa.shp, `San Marino.shp`, `Sao Tome and Principe.shp`, `Saudi Arabia.shp`, Senegal.shp, Serbia.shp, Seychelles.shp, `Sierra Leone.shp`, Singapore.shp, Slovakia.shp, Slovenia.shp, `Solomon Islands.shp`, Somalia.shp, `South Africa.shp`, `South Korea.shp`, `South Sudan.shp`, Spain.shp, `Sri Lanka.shp`, Sudan.shp, Suriname.shp, Sweden.shp, Switzerland.shp, Syria.shp, Taiwan.shp, Tajikistan.shp, Thailand.shp, Timor.shp, Togo.shp, `Trinidad and Tobago.shp`, Tunisia.shp, Turkey.shp, Uganda.shp, Ukraine.shp, `United Arab Emirates.shp`, `United Kingdom.shp`, `United States.shp`, Uruguay.shp, Uzbekistan.shp, Vanuatu.shp, Vatican.shp, Venezuela.shp, Vietnam.shp, `Wallis and Futuna.shp`, Yemen.shp, Zambia.shp, Zimbabwe.shp)) {
     # vector output
     country.df <- extraction.fxn(i) 
     # add vector to premade dataframe
@@ -318,10 +392,77 @@ IHME.regions.df <- read.csv(file = 'IHME_regions.csv', header = TRUE)
 IHME.regions.df <- IHME.regions.df %>% rename(location = Countries) %>% select("Super.region", "Regions", "location")
 
 #Merged geospatial data set with COVID data (variables come from COVID exploratory analysis RMD file). 
-covid.NO2.df <- full_join(IHME.regions.df, owid.countries, by = "location")
+covid.NO2.df <- right_join(IHME.regions.df, owid.countries, by = "location")
 covid.NO2.df <- full_join(covid.NO2.df, total.df, by = "location")
 covid.NO2.df$Regions <- as.factor(covid.NO2.df$Regions)
 covid.NO2.df$Super.region <- as.factor(covid.NO2.df$Super.region)
+```
+
+####Weighting by population by country for data frame. 
+```{r, eval = TRUE}
+#isolate country using extract and crop for both pop and NO2
+#calculate product of population and pollution for each cell using overlay function 
+#sum all of these products 
+#divide this sum by tot pop for country from df
+
+pop.den.r <- raster("gpw_v4_population_density/pop.density.tif") #Read in GPW v4 population raster data. 
+
+pop.weighting.fxn <- function(x) {
+  pop.cropped <- crop(pop.den.r, extent(x))
+  pop.cropped <- mask(pop.cropped, x)
+  NO2.cropped <- crop(world.NO2.r, extent(x))
+  NO2.cropped <- mask(NO2.cropped, x)
+  overlay.cropped <- overlay(pop.cropped, NO2.cropped, fun=function(x,y){(x*y)} )
+  sum <- cellStats(overlay.cropped, stat='sum')
+  mod.covid.df <- filter(covid.NO2.df, location == x$NAME)
+  weighted.NO2 <- sum / mod.covid.df$population %>% data.frame()
+  df <- x@data
+  weighted.NO2.df <- merge(df, weighted.NO2)
+  names(weighted.NO2.df)[5] <- "location" 
+  names(weighted.NO2.df)[12] <- "Population weighted NO2"
+  weighted.NO2.df <- weighted.NO2.df %>% select(location, `Population weighted NO2`)
+} #Function to weight NO2 by population for each country. 
+  
+weighted.NO2.df = data.frame()
+for (i in c(Afghanistan.shp, Albania.shp, Algeria.shp, Andorra.shp, Angola.shp, `Antigua and Barbuda.shp`, Argentina.shp, Armenia.shp, Aruba.shp, Australia.shp, Austria.shp, Azerbaijan.shp, Bahamas.shp, Bahrain.shp, Bangladesh.shp, Barbados.shp, Belarus.shp, Belgium.shp, Belize.shp, Benin.shp, Bermuda.shp, Bhutan.shp, Bolivia.shp, `Bosnia and Herzegovina.shp`, Botswana.shp, Brazil.shp, Brunei.shp, Bulgaria.shp, `Burkina Faso.shp`, Burundi.shp, Cambodia.shp, Cameroon.shp, Canada.shp, `Cape Verde.shp`, `Cayman Islands.shp`, `Central African Republic.shp`, Chad.shp, Chile.shp, China.shp, Colombia.shp, Comoros.shp, Congo.shp, `Cook Islands.shp`, `Costa Rica.shp`, `Cote d'Ivoire.shp`, Croatia.shp, Cuba.shp, Cyprus.shp, Czechia.shp, `Democratic Republic of Congo.shp`, Denmark.shp, Djibouti.shp, Dominica.shp, `Dominican Republic.shp`, Ecuador.shp, Egypt.shp, `El Salvador.shp`, `Equatorial Guinea.shp`, Eritrea.shp, Estonia.shp, Ethiopia.shp, `Faeroe Islands.shp`, Fiji.shp, Finland.shp, France.shp, `French Polynesia.shp`, Gabon.shp, Gambia.shp, Georgia.shp, Germany.shp, Ghana.shp, Gibraltar.shp, Greece.shp, Grenada.shp, Guatemala.shp, Guernsey.shp, Guinea.shp, `Guinea-Bissau.shp`, Guyana.shp, Haiti.shp, Honduras.shp, `Hong Kong.shp`, Hungary.shp, Iceland.shp, India.shp, Indonesia.shp, Iran.shp, Iraq.shp, Ireland.shp, `Isle of Man.shp`, Israel.shp, Italy.shp, Jamaica.shp, Japan.shp, Jordan.shp, Kazakhstan.shp, Kenya.shp, Kiribati.shp, Kuwait.shp, Kyrgyzstan.shp, Laos.shp, Latvia.shp, Lebanon.shp, Lesotho.shp, Liberia.shp, Libya.shp, Liechtenstein.shp, Lithuania.shp, Luxembourg.shp, Macao.shp, Madagascar.shp, Malawi.shp, Malaysia.shp, Maldives.shp, Mali.shp, Malta.shp, `Marshall Islands.shp`, Mauritania.shp, Mauritius.shp, Mexico.shp, `Micronesia (country).shp`, Moldova.shp, Monaco.shp, Mongolia.shp, Montenegro.shp, Morocco.shp, Mozambique.shp, Myanmar.shp, Namibia.shp, Nepal.shp, Netherlands.shp, `New Zealand.shp`, Nicaragua.shp, Niger.shp, Nigeria.shp, `North Macedonia.shp`, Norway.shp, Oman.shp, Pakistan.shp, Palestine.shp, Panama.shp, `Papua New Guinea.shp`, Paraguay.shp, Peru.shp, Philippines.shp, Poland.shp, Portugal.shp, Qatar.shp, Romania.shp, Russia.shp, Rwanda.shp, `Saint Kitts and Nevis.shp`, `Saint Lucia.shp`, `Saint Vincent and the Grenadines.shp`, Samoa.shp, `San Marino.shp`, `Sao Tome and Principe.shp`, `Saudi Arabia.shp`, Senegal.shp, Serbia.shp, Seychelles.shp, `Sierra Leone.shp`, Singapore.shp, Slovakia.shp, Slovenia.shp, `Solomon Islands.shp`, Somalia.shp, `South Africa.shp`, `South Korea.shp`, `South Sudan.shp`, Spain.shp, `Sri Lanka.shp`, Sudan.shp, Suriname.shp, Sweden.shp, Switzerland.shp, Syria.shp, Taiwan.shp, Tajikistan.shp, Thailand.shp, Timor.shp, Togo.shp, `Trinidad and Tobago.shp`, Tunisia.shp, Turkey.shp, Uganda.shp, Ukraine.shp, `United Arab Emirates.shp`, `United Kingdom.shp`, `United States.shp`, Uruguay.shp, Uzbekistan.shp, Vanuatu.shp, Vatican.shp, Venezuela.shp, Vietnam.shp, `Wallis and Futuna.shp`, Yemen.shp, Zambia.shp, Zimbabwe.shp)) {
+  country.wNO2.df <- pop.weighting.fxn(i) 
+    # add vector to premade dataframe
+  df <- data.frame(country.wNO2.df)
+  weighted.NO2.df <- rbind(weighted.NO2.df,df)
+} #Apply weighting function to all shapefiles. 
+
+weighted.covid.NO2.df <- full_join(covid.NO2.df, weighted.NO2.df, by = "location") #Join all data frames. 
+```
+
+####Plotting weighted data.
+```{r, eval = TRUE}
+wrld.df <- as.data.frame(wrld_simpl)
+wrld.fort <- fortify(wrld_simpl, region = "NAME")
+names(wrld.fort)[6] <- "location" #Getting world shapefile into data frame for ggplot. 
+
+covid.NO2.plot.df <- full_join(wrld.fort, weighted.covid.NO2.df, by ="location")
+arrange(covid.NO2.plot.df, order) #Joined full weighted COVID data set with shapefile data set. 
+
+map <- ggplot(data = covid.NO2.plot.df, aes(x = long, y = lat, group = group))
+
+map + 
+  geom_polygon(aes(fill = NO2_Concentration), color = 'gray', size = 0.1) +
+  my_theme() + 
+  ggtitle("World Raw NO2 Concentrations 07-10-2018 to 07-10-2019") +
+  scale_fill_gradientn(name = "NO2 Concentration \n(mol/m^2)", colours = myPalette(100))  +
+    north(x.min = -180, y.min = -90, x.max = 180, y.max = 90, anchor = c(x=-140, y=-35), symbol=12) +
+    scalebar(covid.NO2.plot.df, dist = 1000, dist_unit = 'km', transform = TRUE, anchor = c(x=-140, y=-60), st.size = 4, model = 'WGS84') +
+  coord_equal()
+  #Plot of raw NO2 concentrations. 
+
+map + 
+  geom_polygon(aes(fill = Population.weighted.NO2), color = 'gray', size = 0.1) +
+  my_theme() + 
+  ggtitle("World Weighted NO2 Concentrations 07-10-2018 to 07-10-2019") +
+  scale_fill_gradientn(name = "Weighted NO2 \nConcentration", colours = myPalette(100))  +
+    north(x.min = -180, y.min = -90, x.max = 180, y.max = 90, anchor = c(x=-140, y=-35), symbol=12) +
+    scalebar(covid.NO2.plot.df, dist = 1000, dist_unit = 'km', transform = TRUE, anchor = c(x=-140, y=-60), st.size = 4, model = 'WGS84') +
+  coord_equal() #Plot of population weighted NO2. 
 ```
 
 ####Univariate analysis of world NO2 concentrations. 
@@ -564,7 +705,7 @@ cases.NO2 <- function(x) {
                         labs(x = "NO2 Concentration (mol/m^2)", y = "Total COVID-19 Cases per Million People") +
                         labs(title = paste0("COVID-19 Cases per Million People in ", (Regions = x), " vs. NO2 Concentration"))
 } 
-NO2.lm.cases.reg <- function(x) {
+NO2.lm.cases <- function(x) {
                         covid.NO2.df %>%
                         filter(Super.region == x) %>%
                         filter(!is.na(totdeaths.mil)) %>%
@@ -575,7 +716,7 @@ NO2.lm.cases.reg <- function(x) {
 
 for (i in regions.list) {
    print(cases.NO2(i)) 
-   print(NO2.lm.cases.reg(i)) 
+   print(NO2.lm.cases(i)) 
 } #Loops function for continents of interest. 
 
 
@@ -592,7 +733,7 @@ deaths.NO2 <- function(x) {
                         labs(x = "NO2 Concentration (mol/m^2)", y = "Total COVID-19 Deaths per Million People") +
                         labs(title = paste0("COVID-19 Deaths per Million People in ", (Regions = x), " vs. NO2 Concentration"))
 } 
-NO2.lm.deaths.reg <- function(x) {
+NO2.lm.deaths <- function(x) {
                         covid.NO2.df %>%
                         filter(Super.region == x) %>%
                         filter(!is.na(totdeaths.mil)) %>%
@@ -602,9 +743,95 @@ NO2.lm.deaths.reg <- function(x) {
 }
 for (i in regions.list) {
    print(deaths.NO2(i)) 
-   print(NO2.lm.deaths.reg(i)) 
+   print(NO2.lm.deaths(i)) 
 } #Loops function for continents of interest.
 ```
+
+####Bivariate graphs of population weighted NO2 concentrations and COVID-19 outcomes.
+```{r, eval = TRUE}
+#NO2 concentration vs COVID cases. 
+ggplot(data = weighted.covid.NO2.df, aes(x = Population.weighted.NO2, y = totcases.mil)) +
+  geom_point(color = "#333aff", alpha = 1) +
+  geom_smooth(color = "red") +
+  theme_bw() +
+  labs(x = "Weighted NO2 Concentration (mol/m^2)", y = "Total COVID-19 Cases per Million People") +
+  labs(title = "World COVID-19 Cases per Million People vs. Weighted NO2 Concentration") 
+cor(weighted.covid.NO2.df$totcases.mil, weighted.covid.NO2.df$Population.weighted.NO2, use = "complete.obs")
+NO2.lm.cases <- lm(totcases.mil ~ Population.weighted.NO2, data = weighted.covid.NO2.df)
+summary.lm(NO2.lm.cases)
+confint(NO2.lm.cases) #Summary statistics for linear fit. 
+
+#NO2 concentration vs COVID deaths. 
+ggplot(data = weighted.covid.NO2.df, aes(x = Population.weighted.NO2, y = totdeaths.mil)) +
+  geom_point(color = "#333aff", alpha = 1) +
+  geom_smooth(color = "red") +
+  theme_bw() +
+  labs(x = "Weighted NO2 Concentration (mol/m^2)", y = "Total COVID-19 Deaths per Million People") +
+  labs(title = "World COVID-19 Deaths per Million People vs. Weighted NO2 Concentration") 
+cor(weighted.covid.NO2.df$totdeaths.mil, weighted.covid.NO2.df$Population.weighted.NO2, use = "complete.obs")
+NO2.lm.deaths <- lm(totdeaths.mil ~ Population.weighted.NO2, data = weighted.covid.NO2.df,)
+summary.lm(NO2.lm.deaths)
+confint(NO2.lm.deaths) #Summary statistics for linear fit.
+
+regions.list <- c("High-income", "Latin America and Caribbean", "Sub-Saharan Africa", "North Africa and the Middle East", "South Asia", "Southeast Asia, East Asia, and Oceania", "Central Europe, Eastern Europe, and Central Asia")
+sub.regions.list <- c("High-income Asia Pacific", "High-income Australasia", "High-income North America", "High-income Southern Latin America", "High-income Western Europe", "Caribbean", "Central Latin America", "Tropical Latin America", "Andean Latin America", "Central sub-Saharan Africa", "Eastern sub-Saharan Africa", "Southern sub-Saharan Africa", "Western sub-Saharan Africa", "North Africa and the Middle East", "South Asia", "East Asia", "Oceania", "Southeast Asia", "Central Asia", "Central Europe", "Eastern Europe")
+
+#Function for bivariate analysis by region. 
+cases.NO2.w <- function(x) { 
+                    weighted.covid.NO2.df %>% 
+                    filter(Super.region == x) %>%
+                    filter(!is.na(totdeaths.mil)) %>%
+                    filter(!is.na(Population.weighted.NO2)) %>%
+                    ggplot(aes(x = Population.weighted.NO2, y = totcases.mil)) +
+                        geom_point(color = "#333aff") +
+                        geom_smooth(color = "red") +
+                        geom_smooth(method = "lm", color = "purple") +
+                        theme_bw() +
+                        labs(x = "Weighted NO2 Concentration (mol/m^2)", y = "Total COVID-19 Cases per Million People") +
+                        labs(title = paste0("COVID-19 Cases per Million People in ", (Regions = x), " vs. Weighted NO2 Concentration"))
+} 
+NO2.lm.cases.w <- function(x) {
+                        weighted.covid.NO2.df %>%
+                        filter(Super.region == x) %>%
+                        filter(!is.na(totdeaths.mil)) %>%
+                        filter(!is.na(Population.weighted.NO2)) %>%
+                        lm(totcases.mil ~ Population.weighted.NO2,.) %>%
+                        summary.lm()  
+} #Function for linear regression statistics to be included in for loop below. 
+
+for (i in regions.list) {
+   print(cases.NO2.w(i)) 
+   print(NO2.lm.cases.w(i)) 
+} #Loops function for continents of interest. 
+
+
+deaths.NO2.w <- function(x) { 
+                    weighted.covid.NO2.df %>% 
+                    filter(Super.region == x) %>% 
+                    filter(!is.na(totdeaths.mil)) %>%
+                    filter(!is.na(Population.weighted.NO2)) %>%
+                    ggplot(aes(x = Population.weighted.NO2, y = totdeaths.mil)) +
+                        geom_point(color = "#333aff") +
+                        geom_smooth(color = "red") +
+                        geom_smooth(method = "lm", color = "purple") +
+                        theme_bw() +
+                        labs(x = "Weighted NO2 Concentration (mol/m^2)", y = "Total COVID-19 Deaths per Million People") +
+                        labs(title = paste0("COVID-19 Deaths per Million People in ", (Regions = x), " vs. Weighted NO2 Concentration"))
+} 
+NO2.lm.deaths.w <- function(x) {
+                        weighted.covid.NO2.df %>%
+                        filter(Super.region == x) %>%
+                        filter(!is.na(totdeaths.mil)) %>%
+                        filter(!is.na(Population.weighted.NO2)) %>%
+                        lm(totdeaths.mil ~ Population.weighted.NO2,.) %>%
+                        summary.lm() #Function for linear regression statistics to be included in for loop below. 
+}
+for (i in regions.list) {
+   print(deaths.NO2.w(i)) 
+   print(NO2.lm.deaths.w(i)) 
+} #Loops function for continents of interest.
+```
+
 
 ####Bivariate graphs of NO2 concentrations and other continuous variables.
 ```{r, eval = TRUE}
@@ -819,18 +1046,30 @@ focal_cor <- focal(
 ####Plotting satellite vs ground data. 
 ```{r, eval = TRUE}
 ggplot() +
-    geom_raster(data = July_Oct2018.sat, aes(x = Longitude, y = Latitude, fill = NO2_concentration)) +
-    scale_fill_viridis_c() +
-    ggtitle("NO2 US Satellite Data, July-Oct 2018") + 
-    labs(fill = "NO2 Concentration \n(mol/m^2)") +
-    coord_quickmap()
+ geom_raster(data = July_Oct2018.sat, aes(x = Longitude, y = Latitude, fill = NO2_concentration)) + 
+ geom_polygon(data = `United States.shp`, aes(x = long, y = lat, group = group), colour = "black", size = 0.5, fill = NA) +
+  my_theme() + 
+  ggtitle("NO2 US Satellite Data, July-Oct 2018") +
+  #scale_fill_manual(breaks = c(0, 0.0000025, 0.000005, 0.0000075, 0.00001, 0.00002)) +
+  scale_fill_gradientn(name = "NO2 Concentration \n(mol/m^2)", colours = myPalette(100)) +
+    north(x.min = -130, y.min = 23, x.max = -65, y.max = 49, anchor = c(x=-119, y=32), symbol=12) +
+    scalebar(x.min = -130, y.min = 23, x.max = -65, y.max = 49, dist = 200, dist_unit = 'km', transform = TRUE, anchor = c(x=-120, y=27.5), st.size = 1.5, model = 'WGS84') +
+  xlim(-130,-65) +
+  ylim(23,49) +
+  coord_quickmap()
 
 ggplot() +
-    geom_raster(data = July_Oct2018.ground, aes(x = Longitude, y = Latitude, fill = NO2_concentration)) +
-    scale_fill_viridis_c() +
-    ggtitle("NO2 US EPA Ground Data, July-Oct 2018") + 
-    labs(fill = "NO2 Concentration \n(ppb)") +
-    coord_quickmap()
+ geom_raster(data = July_Oct2018.ground, aes(x = Longitude, y = Latitude, fill = NO2_concentration)) + 
+ geom_polygon(data = `United States.shp`, aes(x = long, y = lat, group = group), colour = "black", size = 0.5, fill = NA) +
+  my_theme() + 
+  ggtitle("NO2 US EPA Ground Data, July-Oct 2018") +
+  #scale_fill_manual(breaks = c(0, 0.0000025, 0.000005, 0.0000075, 0.00001, 0.00002)) +
+  scale_fill_gradientn(name = "NO2 Concentration \n(ppb)", colours = myPalette(100)) +
+    north(x.min = -130, y.min = 23, x.max = -65, y.max = 49, anchor = c(x=-119, y=32), symbol=12) +
+    scalebar(x.min = -130, y.min = 23, x.max = -65, y.max = 49, dist = 200, dist_unit = 'km', transform = TRUE, anchor = c(x=-120, y=27.5), st.size = 1.5, model = 'WGS84') +
+  xlim(-130,-65) +
+  ylim(23,49) +
+  coord_quickmap()
 ```
 
 ###Correlation analysis: China, satellite vs. ground data. 
