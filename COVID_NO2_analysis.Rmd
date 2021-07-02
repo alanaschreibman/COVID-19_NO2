@@ -17,143 +17,34 @@ output:
 knitr::opts_chunk$set(warning = FALSE, message = FALSE)
 ```
 
+***
+The purpose of this file is to practice applying basic R commands learned through lecture videos and perform exploratory analysis on worldwide COVID-19 data. 
+
 ```{r, eval = TRUE}
 #Load libraries needed. 
 library(easypackages)
-libraries("rgdal", "gdalUtils", "raster", "maptools", "tigris", "ggplot2", "cowplot", "dplyr", "sp", "sf", "rgdal", "stringr", "RColorBrewer", "ggcorrplot", "pander", "forcats", "ggsn", "mapproj", "rlist")
+libraries("rgdal", "gdalUtils", "raster", "maptools", "tigris", "ggplot2", "cowplot", "dplyr", "sp", "sf", "rgdal", "stringr", "RColorBrewer", "ggcorrplot", "pander", "forcats", "ggsn", "mapproj", "rlist", "lubridate")
 ```
 
-###Merging NO2 data with COVID data for analysis.  
-####United States data. (delete later, code generalized below)
+### Merging NO2 data with COVID data for analysis.  
+#### Preparing shapefiles and COVID data.
 ```{r, eval = TRUE}
-#Reading in US data from Earth Engine. 
-continental.US.NO2.r <- raster('continental_us.tif') %>%
-  flip(direction='y')
-plot(continental.US.NO2.r)
-
-#Reading in shapefile and filtering for US only.
+#Reading in world countries shapefile.
 data(wrld_simpl)
 wrld_simpl@data[["NAME"]]
 plot(wrld_simpl) 
-us.shp <- wrld_simpl[wrld_simpl$NAME=="United States", ]
-plot(us.shp)
 
-#More exploration on raster NO2 file. 
-head(continental.US.NO2.r)
-dim(continental.US.NO2.r)
-plot(continental.US.NO2.r)
-plot(wrld_simpl[wrld_simpl$NAME=="United States", ], add = TRUE)
-str(continental.US.NO2.r)
-
-#Extracting mean NO2 values for US and adding to coordinates data to make final data frame.
-r.vals <- raster::extract(continental.US.NO2.r, us.shp)
-r.mean <- lapply(r.vals, FUN=mean, na.rm = TRUE)
-final.df <- data.frame(us.shp@data, r.mean)  
-rm(r.mean, r.vals)
-names(final.df)[12] <- "NO2_Concentration"
-names(final.df)[5] <- "location"
-head(final.df)
-
-#Merged geospatial data set with COVID data (variables come from COVID exploratory analysis RMD file). 
-covid.NO2 <- merge(owid.filtered, final.df, by = "location")
+#Filtering COVID data (from COVID exploratory analysis.)
+owid <- read.csv(url("https://raw.githubusercontent.com/owid/covid-19-data/master/public/data/owid-covid-data.csv"), na.strings = c("", "NA"), colClasses = c("date" = "Date"), header = TRUE)
+owid.filtered <- owid %>%
+                  rename(iso.code = iso_code, totcases = total_cases, totdeaths = total_deaths, totcases.mil = total_cases_per_million, totdeaths.mil = total_deaths_per_million, pop.density = population_density, med.age = median_age, older70 = aged_70_older, gdp.cap = gdp_per_capita, card.death = cardiovasc_death_rate, diab.prev = diabetes_prevalence, fem.smokers = female_smokers, male.smokers = male_smokers) %>%
+                  select(c(iso.code:totcases, totdeaths, totcases.mil, totdeaths.mil, population, pop.density, med.age, older70, gdp.cap, card.death, diab.prev, fem.smokers, male.smokers)) %>% #Renamed variables and filtered to keep only those of interest. 
+                  filter(date == "2021-06-28") #Filtered out all but most recent date (most recent date is a running sum of total cases).
+owid.countries <- owid.filtered %>%
+                    filter(!is.na(continent)) #Removed all rows with NA for continent, leaving behind only countries. 
 ```
 
-####Formatting data for selected 10 countries. (delete later, code generalized below)
-```{r, eval = TRUE}
-#Reading in US data from Earth Engine. 
-UnitedStates.NO2.r <- raster('./COVID_comparison/United States_NO2.tif') %>%
-  flip(direction='y')
-China.NO2.r <- raster('./COVID_comparison/China_NO2.tif') %>%
-  flip(direction='y')
-India.NO2.r <- raster('./COVID_comparison/India_NO2.tif') %>%
-  flip(direction='y')
-Italy.NO2.r <- raster('./COVID_comparison/Italy_NO2.tif') %>%
-  flip(direction='y')
-Brazil.NO2.r <- raster('./COVID_comparison/Brazil_NO2.tif') %>%
-  flip(direction='y')
-Peru.NO2.r <- raster('./COVID_comparison/Peru_NO2.tif') %>%
-  flip(direction='y')
-Israel.NO2.r <- raster('./COVID_comparison/Israel_NO2.tif') %>%
-  flip(direction='y')
-Argentina.NO2.r <- raster('./COVID_comparison/Argentina_NO2.tif') %>%
-  flip(direction='y')
-Russia.NO2.r <- raster('./COVID_comparison/Russia_NO2.tif') %>%
-  flip(direction='y')
-UnitedKingdom.NO2.r <- raster('./COVID_comparison/United Kingdom_NO2.tif') %>%
-  flip(direction='y')
-plot(Russia.NO2.r)
-plot(Russia.shp, add = TRUE)
-head(Russia.NO2.r)
-
-#Shapefiles for 10 countries with high COVID cases. 
-countries.shp.fxn <- function(x) {
-  wrld_simpl[wrld_simpl$NAME==x, ]
-}
-for(i in c("United States", "China", "India", "Italy", "Brazil", "Peru", "Israel", "Argentina", "Russia", "United Kingdom")) {  
-  assign(paste0(i, ".shp"), countries.shp.fxn(i)) 
-}
-
-#Extracting mean NO2 values and adding to coordinates data to make final data frame. Then, merge geospatial data set with COVID data (variables come from COVID exploratory analysis RMD file). 
-mean.NO2.fxn <- function(raster, shp, country) {
-  r.vals <- raster::extract(raster, shp)
-  r.mean <- lapply(r.vals, FUN=mean, na.rm = TRUE)
-  final.df <- data.frame(shp@data, r.mean)  
-  names(final.df)[12] <- "NO2_Concentration" #Average NO2 concentration in mol/m^2 from July 10 2018 to July 10 2019. 
-  names(final.df)[5] <- "location"
-  final.df <- merge(owid.filtered, final.df, by = "location")
-  assign(paste0(country, ".df"), final.df, .GlobalEnv)
-}
-mean.NO2.fxn(UnitedStates.NO2.r, `United States.shp`, "UnitedStates")
-mean.NO2.fxn(China.NO2.r, `China.shp`, "China")
-mean.NO2.fxn(India.NO2.r, `India.shp`, "India")
-mean.NO2.fxn(Italy.NO2.r, `Italy.shp`, "Italy")
-mean.NO2.fxn(Brazil.NO2.r, `Brazil.shp`, "Brazil")
-mean.NO2.fxn(Peru.NO2.r, `Peru.shp`, "Peru")
-mean.NO2.fxn(Israel.NO2.r, `Israel.shp`, "Israel")
-mean.NO2.fxn(Argentina.NO2.r, `Argentina.shp`, "Argentina")
-mean.NO2.fxn(Russia.NO2.r, `Russia.shp`, "Russia")
-mean.NO2.fxn(UnitedKingdom.NO2.r, `United Kingdom.shp`, "UnitedKingdom")
-
-COVID_NO2.df <- Reduce(function(...) merge(..., all=TRUE), list(UnitedStates.df, China.df, India.df, Italy.df, Brazil.df, Peru.df, Israel.df, Argentina.df, Russia.df, UnitedKingdom.df)) #Joins rows into one data frame. 
-
-#Fix for loop later. 
-for(i in c("UnitedStates.NO2.r", "China.NO2.r", "India.NO2.r", "Italy.NO2.r", "Brazil.NO2.r", "Peru.NO2.r", "Israel.NO2.r", "Argentina.NO2.r", "Russia.NO2.r", "UnitedKingdom.NO2.r")) { 
-  for(j in c("United States.shp", "China.shp", "India.shp", "Italy.shp", "Brazil.shp", "Peru.shp", "Israel.shp", "Argentina.shp", "Russia.shp", "United Kingdom.shp")) {
-    for (k in c("UnitedStates", "China", "India", "Italy", "Brazil", "Peru", "Israel", "Argentina", "Russia", "UnitedKingdom")) {
-    print(mean.NO2.fxn(i, j, k))
-    }
-  }
-}
-```
-
-####Analysis for selected 10 countries. (delete later, code generalized below)
-```{r, eval = TRUE}
-#NO2 concentration vs COVID cases. 
-ggplot(data = COVID_NO2.df, aes(x = NO2_Concentration, y = totcases.mil)) +
-  geom_point(color = "#333aff", alpha = 1) +
-  geom_smooth(color = "red") +
-  theme_bw() +
-  labs(x = "NO2 Concentration (mol/m^2)", y = "Total COVID-19 Cases per Million People") +
-  labs(title = "World COVID-19 Cases per Million People vs. NO2 Concentration") 
-cor(COVID_NO2.df$totcases.mil, COVID_NO2.df$NO2_Concentration, use = "complete.obs") 
-NO2.lm.cases <- lm(totcases.mil ~ NO2_Concentration + gdp.cap + pop.density + med.age, data = COVID_NO2.df)
-summary.lm(NO2.lm.cases) #Summary statistics for linear fit. 
-
-#NO2 concentration vs COVID deaths. 
-ggplot(data = COVID_NO2.df, aes(x = NO2_Concentration, y = totdeaths.mil)) +
-  geom_point(color = "#333aff", alpha = 1) +
-  geom_smooth(color = "red") +
-  theme_bw() +
-  labs(x = "NO2 Concentration (mol/m^2)", y = "Total COVID-19 Deaths per Million People") +
-  labs(title = "World COVID-19 Deaths per Million People vs. NO2 Concentration") 
-cor(COVID_NO2.df$totdeaths.mil, COVID_NO2.df$NO2_Concentration, use = "complete.obs") 
-NO2.lm.cases <- lm(totdeaths.mil ~ NO2_Concentration + gdp.cap  + pop.density + med.age, data = COVID_NO2.df)
-summary.lm(NO2.lm.cases) #Summary statistics for linear fit. 
-
-#look at correlations w other country characteristics 
-```
-
-###Creating mosaic of half-world raster files and reading in world satellite data. 
+#### Creating mosaic of half-world raster files and reading in world satellite data. 
 ```{r, eval = TRUE}
 setwd("./World_Rasters")
 left <- raster('Left_Half_World_NO2.tif') %>%
@@ -204,7 +95,7 @@ plot(world.NO2.r)
 plot(wrld_simpl, add = TRUE)
 ```
 
-####Preparing data for world analysis. 
+#### Preparing data for world analysis. 
 ```{r, eval = TRUE}
 wrld_simpl@data$NAME <- as.character(wrld_simpl@data$NAME)
 
@@ -264,7 +155,7 @@ covid.NO2.df$Regions <- as.factor(covid.NO2.df$Regions)
 covid.NO2.df$Super.region <- as.factor(covid.NO2.df$Super.region)
 ```
 
-####Weighting by population by country for data frame. 
+#### Weighting by population by country for data frame. 
 ```{r, eval = TRUE}
 #isolate country using extract and crop for both pop and NO2
 #calculate product of population and pollution for each cell using overlay function 
@@ -294,14 +185,14 @@ weighted.NO2.df <- purrr::map_dfr(x, pop.weighting.fxn)
 weighted.covid.NO2.df <- full_join(covid.NO2.df, weighted.NO2.df, by = "location") #Join all data frames. 
 ```
 
-####Plotting weighted data.
+#### Plotting weighted data.
 ```{r, eval = TRUE}
 wrld.df <- as.data.frame(wrld_simpl)
 wrld.fort <- fortify(wrld_simpl, region = "NAME")
 names(wrld.fort)[6] <- "location" #Getting world shapefile into data frame for ggplot. 
 
 covid.NO2.plot.df <- full_join(wrld.fort, weighted.covid.NO2.df, by ="location")
-arrange(covid.NO2.plot.df, order) #Joined full weighted COVID data set with shapefile data set. 
+covid.NO2.plot.df <- arrange(covid.NO2.plot.df, order) #Joined full weighted COVID data set with shapefile data set. 
 
 map <- ggplot(data = covid.NO2.plot.df, aes(x = long, y = lat, group = group))
 
@@ -325,31 +216,20 @@ map +
   coord_equal() #Plot of population weighted NO2. 
 ```
 
-####Urban areas only: preparing data. 
-```{r, eval = TRUE}
-world.sf <- st_read("world_maps/country_gen_trim.shp")  # Read shapefile as an sf object
-class(world.sf)
-head(world.sf)
-world.geo <- st_geometry(world.sf)
-urban.shp <- st_read("urban_shapefile/ne_10m_urban_areas_landscan.shp") # Read shapefile as an sf object
-urban.shp <- st_geometry(urban.shp)
-plot(urban.shp)
-str(urban.shp)
-```
-
-####Univariate analysis of world NO2 concentrations. 
+### Exploratory Analysis of NO2 and COVID-19 variables. 
+#### Univariate analysis of world NO2 concentrations. 
 ```{r, eval = TRUE}
 #Statistics on world NO2 concentrations. 
 covid.NO2.df %>%
-    summarize(variable = "NO2_Concentration", mean_NO2 = mean(NO2_Concentration), st_dev_cty = sd(NO2_Concentration)) %>%
+    summarize(variable = "NO2_Concentration", mean_NO2 = mean(NO2_Concentration, na.rm = T), st_dev_cty = sd(NO2_Concentration, na.rm = T)) %>%
     pander
 
 covid.NO2.df %>%
     summarize(variable = "NO2_Concentration",
-              q0.2 = quantile(NO2_Concentration, 0.2),
-              q0.4 = quantile(NO2_Concentration, 0.4),
-              q0.6 = quantile(NO2_Concentration, 0.6),
-              q0.8 = quantile(NO2_Concentration, 0.8)) %>%
+              q0.2 = quantile(NO2_Concentration, 0.2, na.rm = T),
+              q0.4 = quantile(NO2_Concentration, 0.4, na.rm = T),
+              q0.6 = quantile(NO2_Concentration, 0.6, na.rm = T),
+              q0.8 = quantile(NO2_Concentration, 0.8, na.rm = T)) %>%
     pander
 
 #Histogram of NO2 concentrations.
@@ -365,11 +245,11 @@ covid.NO2.df %>%
     theme(axis.text.x = element_text(angle = 45,hjust=1))
 ```
 
-####Univariate analysis of world COVID statistics. 
+#### Univariate analysis of world COVID statistics. 
 ```{r, eval = TRUE}
 #Statistics on world COVID case statistics. 
 covid.NO2.df %>%
-    summarize(variable = "totcases.mil", mean_cases = mean(totcases.mil), st_dev_cty = sd(totcases)) %>%
+    summarize(variable = "totcases.mil", mean_cases = mean(totcases.mil, na.rm = T), st_dev_cty = sd(totcases, na.rm = T)) %>%
     pander
 
 covid.NO2.df %>%
@@ -395,7 +275,7 @@ covid.NO2.df %>%
 
 #Statistics on world COVID death statistics. 
 covid.NO2.df %>%
-    summarize(variable = "totdeaths.mil", mean_cases = mean(totcases.mil), st_dev_cty = sd(totcases)) %>%
+    summarize(variable = "totdeaths.mil", mean_cases = mean(totcases.mil, na.rm = T), st_dev_cty = sd(totcases, na.rm = T)) %>%
     pander
 
 covid.NO2.df %>%
@@ -420,7 +300,7 @@ covid.NO2.df %>%
     theme(axis.text.x = element_text(angle = 45,hjust=1))
 ```
 
-####Bivariate analysis of NO2 concentrations, COVID data, and categorical variables (continent divisions)
+#### Bivariate analysis of NO2 concentrations, COVID data, and categorical variables (super region divisions)
 ```{r, fig.width=5, fig.height=5,eval = TRUE}
 #Summary statistics, NO2, grouping by Super.region
 covid.NO2.df %>% 
@@ -513,7 +393,7 @@ covid.NO2.df %>%
     scale_y_continuous(breaks = seq(0,5820.087,500))
 ```
 
-####Bivariate analysis of NO2 concentrations and all continuous variables
+#### Bivariate analysis of NO2 concentrations and all continuous variables
 ```{r, eval = TRUE}
 covid.NO2.df %>%
     select(NO2_Concentration, totcases.mil, totdeaths.mil, pop.density, med.age, card.death, diab.prev, fem.smokers, male.smokers) %>% 
@@ -534,7 +414,7 @@ covid.NO2.df %>%
                
 ```
 
-####Bivariate graphs of NO2 concentrations and COVID-19 outcomes.
+#### Bivariate graphs of NO2 concentrations and COVID-19 outcomes.
 ```{r, eval = TRUE}
 #NO2 concentration vs COVID cases. 
 ggplot(data = covid.NO2.df, aes(x = NO2_Concentration, y = totcases.mil)) +
@@ -575,7 +455,7 @@ cases.NO2 <- function(x) {
                         geom_smooth(method = "lm", color = "purple") +
                         theme_bw() +
                         labs(x = "NO2 Concentration (mol/m^2)", y = "Total COVID-19 Cases per Million People") +
-                        labs(title = paste0("COVID-19 Cases per Million People in ", (Regions = x), " vs. NO2 Concentration"))
+                        labs(title = paste0("COVID-19 Cases per Million People in ", (Super.region = x), " vs. NO2 Concentration"))
 } 
 NO2.lm.cases <- function(x) {
                         covid.NO2.df %>%
@@ -603,7 +483,7 @@ deaths.NO2 <- function(x) {
                         geom_smooth(method = "lm", color = "purple") +
                         theme_bw() +
                         labs(x = "NO2 Concentration (mol/m^2)", y = "Total COVID-19 Deaths per Million People") +
-                        labs(title = paste0("COVID-19 Deaths per Million People in ", (Regions = x), " vs. NO2 Concentration"))
+                        labs(title = paste0("COVID-19 Deaths per Million People in ", (Super.region = x), " vs. NO2 Concentration"))
 } 
 NO2.lm.deaths <- function(x) {
                         covid.NO2.df %>%
@@ -619,7 +499,7 @@ for (i in regions.list) {
 } #Loops function for continents of interest.
 ```
 
-####Bivariate graphs of population weighted NO2 concentrations and COVID-19 outcomes.
+#### Bivariate graphs of population weighted NO2 concentrations and COVID-19 outcomes.
 ```{r, eval = TRUE}
 #NO2 concentration vs COVID cases. 
 ggplot(data = weighted.covid.NO2.df, aes(x = `Population weighted NO2`, y = totcases.mil)) +
@@ -660,7 +540,7 @@ cases.NO2.w <- function(x) {
                         geom_smooth(method = "lm", color = "purple") +
                         theme_bw() +
                         labs(x = "Weighted NO2 Concentration (mol/m^2)", y = "Total COVID-19 Cases per Million People") +
-                        labs(title = paste0("COVID-19 Cases per Million People in ", (Regions = x), " vs. Weighted NO2 Concentration"))
+                        labs(title = paste0("COVID-19 Cases per Million People in ", (Super.region = x), " vs. Weighted NO2 Concentration"))
 } 
 NO2.lm.cases.w <- function(x) {
                         weighted.covid.NO2.df %>%
@@ -688,7 +568,7 @@ deaths.NO2.w <- function(x) {
                         geom_smooth(method = "lm", color = "purple") +
                         theme_bw() +
                         labs(x = "Weighted NO2 Concentration (mol/m^2)", y = "Total COVID-19 Deaths per Million People") +
-                        labs(title = paste0("COVID-19 Deaths per Million People in ", (Regions = x), " vs. Weighted NO2 Concentration"))
+                        labs(title = paste0("COVID-19 Deaths per Million People in ", (Super.region = x), " vs. Weighted NO2 Concentration"))
 } 
 NO2.lm.deaths.w <- function(x) {
                         weighted.covid.NO2.df %>%
@@ -704,8 +584,7 @@ for (i in regions.list) {
 } #Loops function for continents of interest.
 ```
 
-
-####Bivariate graphs of NO2 concentrations and other continuous variables.
+#### Bivariate graphs of NO2 concentrations and other continuous variables.
 ```{r, eval = TRUE}
  #NO2 concentration vs population density. 
 ggplot(data = covid.NO2.df, aes(x = NO2_Concentration, y = pop.density)) +
@@ -768,7 +647,7 @@ summary.lm(NO2.lm.diab)
 confint(NO2.lm.diab) #Summary statistics for linear fit.
 ```
 
-####Multivariate graphs of COVID outcomes vs NO2 concentrations. 
+#### Multivariate graphs of COVID outcomes vs NO2 concentrations. 
 ```{r, eval = TRUE}
 #NO2 concentration vs COVID cases. 
 ggplot(data = covid.NO2.df, aes(x = NO2_Concentration, y = totcases.mil)) +
@@ -841,27 +720,26 @@ for (i in regions.list) {
 } #Loops function for continents of interest.
 ```
 
-###Correlation analysis: United States, satellite vs. ground EPA. 
-####Formatting sattelite and ground data. 
+### Correlation analysis: satellite vs. ground EPA. 
+#### Formatting sattelite and ground data (US only). 
 ```{r, eval = TRUE}
 #Getting satellite data specifically for this time frame. 
 July_Oct2018.sat.r <- raster('US_ground_NO2/US_NO2_2018-07-01_start.tif') %>%
   flip(direction='y')
-July_Oct2018.sat.r <- crop(July_Oct2018.sat.r, extent(`United States.shp`))
-July_Oct2018.sat.r <- mask(July_Oct2018.sat.r, `United States.shp`)
+July_Oct2018.sat.r <- crop(July_Oct2018.sat.r, extent(wrld_simpl[wrld_simpl@data$NAME=="United States", ]))
+July_Oct2018.sat.r <- mask(July_Oct2018.sat.r, wrld_simpl[wrld_simpl@data$NAME=="United States", ])
 
 #Direct conversion from NO2 raster to data frame while filtering by shapefile. 
 continental.US.fxn <- function(x) {
   r1 <- raster(x) %>% flip(direction='y')
-  r1 <- crop(r1, extent(`United States.shp`))
-  r1 <- mask(r1, `United States.shp`)
+  r1 <- crop(r1, extent(wrld_simpl[wrld_simpl@data$NAME=="United States", ]))
+  r1 <- mask(r1, wrld_simpl[wrld_simpl@data$NAME=="United States", ])
   r1 <- rasterToPoints(r1, spatial = TRUE) 
   July_Oct2018.sat <- data.frame(r1) %>% 
       select(!("optional")) %>%
       select( "y", "x", "US_NO2_2018.07.01_start")
   July_Oct2018.sat <- rename(July_Oct2018.sat, Latitude = y, Longitude = x, NO2_concentration = US_NO2_2018.07.01_start)
   assign("July_Oct2018.sat", July_Oct2018.sat, .GlobalEnv)
-  July_Oct2018.sat
 }  #Final satellite data to use for comparison to EPA data. 
 continental.US.fxn("US_ground_NO2/US_NO2_2018-07-01_start.tif")
 
@@ -870,20 +748,18 @@ US.lat.lon <- July_Oct2018.sat %>% select(c(Latitude, Longitude))
 # write.csv(US.lat.lon, file.path("US_ground_NO2", "US_lat_lon.csv"), row.names = FALSE) #Used to gather EPA data from Pargasite. 
 
 #Reading in EPA data
-#Problem w Pargasite: only overlapping time frame is July 2018 - October 2018 (Pargasite stops working in November 2018)
+#Pargasite: only overlapping time frame is July 2018 - October 2018 (Pargasite stops working in November 2018)
 July_Oct2018.ground <- read.csv(file = './US_ground_NO2/July_Oct2018NO2.csv') %>% select(c("Latitude", "Longitude", "no2_estimate")) %>% rename(NO2_concentration = no2_estimate)
-July_Oct2018.ground <- data.frame(July_Oct2018.ground)
-July_Oct2018.ground #Final EPA data to use in comparison to satellite data. 
+July_Oct2018.ground <- data.frame(July_Oct2018.ground) #Final EPA data to use in comparison to satellite data. 
 
 #EPA data frame changed to raster format.
 July_Oct2018.ground.r <- July_Oct2018.ground %>% select(c("Longitude", "Latitude", "NO2_concentration")) %>% rasterFromXYZ() 
 ```
 
-####Checking for satellite data correlation to ground data.
+#### Checking for satellite data correlation to ground data (US only).
 ```{r, eval = TRUE}
 #Resampling raster data to be same size for comparisons. 
 July_Oct2018.sat.r.re <- July_Oct2018.sat.r %>% resample(July_Oct2018.ground.r)
-plot(July_Oct2018.sat.r.re)
 
 #Perform correlation test between satellite and ground rasters. 
 cor(values(July_Oct2018.sat.r.re),
@@ -894,32 +770,14 @@ cor(values(July_Oct2018.sat.r.re),
 lm1 <- lm(values(July_Oct2018.sat.r.re) ~ values(July_Oct2018.ground.r))
 summary(lm1)
 
-#Local correlation estimates--shows where locally on map specific regions are positively or negatively correlated. (Getting an error: code from this website https://statnmap.com/2018-01-27-spatial-correlation-between-rasters/)
-values(July_Oct2018.sat.r.re) <- 1:ncell(July_Oct2018.sat.r.re)
-
-matrix_ground <- values(July_Oct2018.ground.r)
-
-focal_cor <- focal(
-  x = July_Oct2018.sat.r.re,
-  w = matrix(1, 5, 5),
-  # fun = function(x, y = temp_chl_s){ # Original
-    # cor(values(y)[x, 1], values(y)[x, 2], # Original
-        # use = "na.or.complete")
-  # },
-  fun = function(x, y = matrix_ground){ # [MW]
-    cor(y[x, 1], y[x, 2], # [MW]
-        use = "na.or.complete")
-  },
-  filename = file.path("focal_cor.tif"),
-  overwrite = TRUE
-)
+#Local correlation estimates--shows where locally on map specific regions are positively or negatively correlated. (Getting an error: try to replicate code from this website https://statnmap.com/2018-01-27-spatial-correlation-between-rasters/)
 ```
 
-####Plotting satellite vs ground data. 
+#### Plotting satellite vs ground data (US only). 
 ```{r, eval = TRUE}
 ggplot() +
  geom_raster(data = July_Oct2018.sat, aes(x = Longitude, y = Latitude, fill = NO2_concentration)) + 
- geom_polygon(data = `United States.shp`, aes(x = long, y = lat, group = group), colour = "black", size = 0.5, fill = NA) +
+ geom_polygon(data = wrld_simpl[wrld_simpl@data$NAME=="United States", ], aes(x = long, y = lat, group = group), colour = "black", size = 0.5, fill = NA) +
   my_theme() + 
   ggtitle("NO2 US Satellite Data, July-Oct 2018") +
   #scale_fill_manual(breaks = c(0, 0.0000025, 0.000005, 0.0000075, 0.00001, 0.00002)) +
@@ -932,7 +790,7 @@ ggplot() +
 
 ggplot() +
  geom_raster(data = July_Oct2018.ground, aes(x = Longitude, y = Latitude, fill = NO2_concentration)) + 
- geom_polygon(data = `United States.shp`, aes(x = long, y = lat, group = group), colour = "black", size = 0.5, fill = NA) +
+ geom_polygon(data = wrld_simpl[wrld_simpl@data$NAME=="United States", ], aes(x = long, y = lat, group = group), colour = "black", size = 0.5, fill = NA) +
   my_theme() + 
   ggtitle("NO2 US EPA Ground Data, July-Oct 2018") +
   #scale_fill_manual(breaks = c(0, 0.0000025, 0.000005, 0.0000075, 0.00001, 0.00002)) +
@@ -944,22 +802,27 @@ ggplot() +
   coord_quickmap()
 ```
 
-###Correlation analysis: China, satellite vs. ground data. 
-####Formatting sattelite and ground data to be used for correlation analysis (China only). 
+#### Formatting sattelite and ground data to be used for correlation analysis (China only). 
 ```{r, eval = TRUE}
-#No success in retrieving data so far. 
-
-#Getting satellite data specifically for this time frame. 
-July_Oct2018.sat.r <- raster('July2018-Oct2018.tif') %>%
-  flip(direction='y')
-July_Oct2018.sat.r <- crop(July_Oct2018.sat.r, extent(`United States.shp`))
-July_Oct2018.sat.r <- mask(July_Oct2018.sat.r, `United States.shp`)
-plot(July_Oct2018.sat.r)
-plot(us.shp, add = TRUE)
+#No success in retrieving data so far due to lack of shapefiles. 
 ```
 
-####World Air Quality Data City Analysis: data preparation. 
+#### Reading in shapefiles for six cities analysis. 
 ```{r, eval = TRUE}
+#Unsuccessful without ArcGIS access.
+london.shp <- st_read("six_cities_shapefiles/london/ESRI/London_Borough_Excluding_MHW.shp")  # Read shapefile as an sf object
+class(london.shp)
+london.shp <- st_geometry(london.shp)
+plot(london.shp)
+
+seattle.shp <- st_read("six_cities_shapefiles/seattle/WA.shp")  # Read shapefile as an sf object
+class(seattle.shp)
+seattle.shp <- st_geometry(seattle.shp)
+plot(seattle.shp)
+```
+
+#### World Air Quality Data City Analysis: data preparation. 
+```{r, eval = FALSE}
 #Unsuccessful: cannot find shapefiles for the selected cities without ArcGIS access.
 #Read in world AQI data for 6 cities. Dates range 12/30/19 to 4/5/20. 
 waqi.main <- read.csv(file = 'waqi_NO2.csv', header = TRUE) 
@@ -1126,24 +989,9 @@ london.sat.weekly <- purrr::map2_dfr(x, y, london.sat.fxn)
 london.weekly.df <- rbind(london.sat.weekly,london.ground.weekly.df) 
 ```
 
-####Reading in shapefiles for six cities analysis. 
+### Time analysis: NO2 changes during the COVID-19 pandemic.
+#### US time analysis: interrupted series time analysis data preparation. 
 ```{r, eval = TRUE}
-#Unsuccessful without ArcGIS access.
-london.shp <- st_read("six_cities_shapefiles/london/ESRI/London_Borough_Excluding_MHW.shp")  # Read shapefile as an sf object
-class(london.shp)
-london.shp <- st_geometry(london.shp)
-plot(london.shp)
-
-seattle.shp <- st_read("six_cities_shapefiles/seattle/WA.shp")  # Read shapefile as an sf object
-class(seattle.shp)
-seattle.shp <- st_geometry(seattle.shp)
-plot(seattle.shp)
-```
-
-###Time-analysis: NO2 changes during the COVID-19 pandemic.
-####US time analysis: interrupted series time analysis data preparation. 
-```{r, eval = TRUE}
-#US first to create code; others later. 
 #Use function in other NO2_Exploratory Analysis file to filter out each week from Jan-Dec 2019 and Jan-Dec 2020 for comparison.
 
 #Used code:
@@ -1164,9 +1012,9 @@ dates.2019 <- seq(as.Date("2018-12-31"), as.Date("2019-12-29"), by=7) #List of d
 #Function to make data frame for weekly average NO2 concentration. 
 read.fxn <- function(x, y) {
   r <- raster(paste0("US_time_analysis_2019/", x)) %>% flip(direction='y')  
-  r.vals <- raster::extract(r, `United States.shp`)
+  r.vals <- raster::extract(r, wrld_simpl[wrld_simpl@data$NAME=="United States", ])
   r.mean <- lapply(r.vals, FUN=mean, na.rm = TRUE)
-  final.df <- data.frame(`United States.shp`@data, r.mean)  
+  final.df <- data.frame(wrld_simpl[wrld_simpl@data$NAME=="United States", ]@data, r.mean)  
   Date <- as.Date(dates.2019[[y]])
   Week <- paste0(as.character(as.Date(dates.2019[[y]])), " to ", as.character(as.Date(dates.2019[[y]]) + 6)) 
   Period <- rep(2019, length.out = nrow(final.df)) 
@@ -1193,9 +1041,9 @@ dates.2020 <- seq(as.Date("2019-12-30"), as.Date("2021-01-03"), by=7) #List of d
 #Function to make data frame for weekly average NO2 concentration. 
 read.fxn <- function(x, y) {
   r <- raster(paste0("US_time_analysis_2020/", x)) %>% flip(direction='y')  
-  r.vals <- raster::extract(r, `United States.shp`)
+  r.vals <- raster::extract(r, wrld_simpl[wrld_simpl@data$NAME=="United States", ])
   r.mean <- lapply(r.vals, FUN=mean, na.rm = TRUE)
-  final.df <- data.frame(`United States.shp`@data, r.mean)   
+  final.df <- data.frame(wrld_simpl[wrld_simpl@data$NAME=="United States", ]@data, r.mean)   
   Date <- as.factor(as.Date(dates.2020[[y]]))
   Week <- paste0(as.character(as.Date(dates.2020[[y]])), " to ", as.character(as.Date(dates.2020[[y]]) + 6)) 
   Period <- rep(2020, length.out = nrow(final.df)) 
@@ -1213,7 +1061,7 @@ US.weekly.df$Date <- as.Date(US.weekly.df$Date)
 US.weekly.df$Period <- as.factor(US.weekly.df$Period)
 ```
 
-####US time analysis: interrupted series time analysis plots.
+#### US time analysis: interrupted series time analysis plots.
 ```{r, fig.width=20, fig.height=4, eval = TRUE}
 ggplot(US.weekly.df, aes(x = Date, y = NO2_Concentration, group = Period, color = Period)) +
   geom_line(size = 0.75) + 
@@ -1248,10 +1096,9 @@ ylim(0, 3E-5) +
   scale_alpha_manual(values = c(0.4, 1.1)) + 
   scale_color_manual(values = c("gray", "blue", "black")) +
   ggsave("US_time_series.pdf")
-`United States.shp`
 ```
 
-####China time analysis: interrupted series time analysis data preparation. 
+#### China time analysis: interrupted series time analysis data preparation. 
 ```{r, eval = TRUE}
 #Use function in other NO2_Exploratory Analysis file to filter out each week from Jan-Dec 2019 and Jan-Dec 2020 for comparison.
 
@@ -1273,9 +1120,9 @@ dates.2019 <- seq(as.Date("2018-11-05"), as.Date("2019-11-10"), by=7) #List of d
 #Function to make data frame for weekly average NO2 concentration. 
 read.fxn <- function(x, y) {
   r <- raster(paste0("China_time_analysis_2019/", x)) %>% flip(direction='y')  
-  r.vals <- raster::extract(r, `China.shp`)
+  r.vals <- raster::extract(r, wrld_simpl[wrld_simpl@data$NAME=="China", ])
   r.mean <- lapply(r.vals, FUN=mean, na.rm = TRUE)
-  final.df <- data.frame(`China.shp`@data, r.mean)  
+  final.df <- data.frame(wrld_simpl[wrld_simpl@data$NAME=="China", ]@data, r.mean)  
   Date <- as.factor(as.Date(dates.2019[[y]] %m+% years(1))) #Adds 1 year to date to match x axis of 2020 dates.
   Week <- paste0(as.character(as.Date(dates.2019[[y]])), " to ", as.character(as.Date(dates.2019[[y]]) + 6)) 
   Period <- rep("2018-2019", length.out = nrow(final.df)) 
@@ -1288,7 +1135,6 @@ read.fxn <- function(x, y) {
 x <- rastlist.2019
 y <- 1:length(dates.2019)
 China.2019.weekly.df <- purrr::map2_dfr(x, y, read.fxn) 
-China.2019.weekly.df$Date <- paste0("2020-", China.2019.weekly.df$Date)
 
 #2020 data.  
 #Creates list of raster files from folder to call in function. 
@@ -1301,9 +1147,9 @@ dates.2020 <- seq(as.Date("2019-11-04"), as.Date("2020-11-08"), by=7) #List of d
 #Function to make data frame for weekly average NO2 concentration. 
 read.fxn <- function(x, y) {
   r <- raster(paste0("China_time_analysis_2020/", x)) %>% flip(direction='y')  
-  r.vals <- raster::extract(r, `China.shp`)
+  r.vals <- raster::extract(r, wrld_simpl[wrld_simpl@data$NAME=="China", ])
   r.mean <- lapply(r.vals, FUN=mean, na.rm = TRUE)
-  final.df <- data.frame(`China.shp`@data, r.mean)   
+  final.df <- data.frame(wrld_simpl[wrld_simpl@data$NAME=="China", ]@data, r.mean)   
   Date <- as.factor(as.Date(dates.2020[[y]]))
   Week <- paste0(as.character(as.Date(dates.2020[[y]])), " to ", as.character(as.Date(dates.2020[[y]]) + 6)) 
   Period <- rep("2019-2020", length.out = nrow(final.df)) 
@@ -1322,7 +1168,7 @@ China.weekly.df$Period <- as.factor(China.weekly.df$Period)
 max(China.weekly.df$NO2_Concentration)
 ```
 
-####China time analysis: interrupted series time analysis plots.
+#### China time analysis: interrupted series time analysis plots.
 ```{r, fig.width=20, fig.height=4, eval = TRUE}
 ggplot(China.weekly.df, aes(x = Date, y = NO2_Concentration, group = Period, color = Period)) +
   geom_line(size = 0.75) + 
@@ -1355,9 +1201,10 @@ ylim(0,4.7E-5) +
   ggsave("China_time_series.pdf")
 ```
 
-####Attempt to do interrupted time series analysis with all world data. 
-```{r, eval = TRUE}
-#Use function in other NO2_Exploratory Analysis file to filter out each week from Jan-Dec 2019 and Jan-Dec 2020 for comparison. Unsuccessful so far: need to remove country boundaries from shapefile. 
+#### Attempt to do interrupted time series analysis with all world data. 
+```{r, eval = FALSE}
+#Use function in other NO2_Exploratory Analysis file to filter out each week from Jan-Dec 2019 and Jan-Dec 2020 for comparison. 
+#Unsuccessful so far: need to remove inner country boundaries from shapefile and use only world outline. 
 
 #Used code:
 #gsutil -m cp \
@@ -1448,44 +1295,7 @@ world.weekly.df$Date <- as.Date(world.weekly.df$Date)
 world.weekly.df$Period <- as.factor(world.weekly.df$Period)
 ```
 
-####Attempt to do interrupted time series analysis plots with all world data. 
-```{r, fig.width=20, fig.height=4, eval = TRUE}
-ggplot(world.weekly.df, aes(x = Date, y = NO2_Concentration, group = Period, color = Period)) +
-  geom_line(size = 0.75) + 
-  theme(legend.key.size = unit(1, 'cm'),
-        legend.title = element_text(size=14),
-        legend.text = element_text(size=10),
-        axis.title=element_text(size = 20),
-        axis.text.y=element_text(size=24),
-        axis.text.x=element_text(size=30,angle=90, hjust=1)) +
-  labs(fill = "Year of Measured Pollution") +
-  ggtitle("World NO2 in 2019 vs 2020") +
-  ylab("NO2 Concentration (mol/m^2)") +
-  scale_x_date(date_labels = "%b",date_breaks = "1 month",expand=c(0,0),limits=c(as.Date("2019-12-25",format="%Y-%m-%d"),as.Date("2020-12-31",format="%Y-%m-%d"))) +
-ylim(0, 3E-5) +
-  
-  #Pre-lockdown
-  geom_rect(data=world.weekly.df,aes(xmin=as.Date("2019-12-25",format="%Y-%m-%d"),xmax=as.Date("2020-03-19",format="%Y-%m-%d"),ymin=2.9E-5,ymax=3E-5),fill = "#c0c0c0",color = NA, alpha=0.02) +
-  geom_text(data=world.weekly.df,aes(x=as.Date("2020-02-07"),y=2.95E-5),label="Pre-Lockdown",color = "black", size = 2) +
-  geom_vline(data=world.weekly.df,xintercept = as.Date("2020-03-19",format="%Y-%m-%d"),linetype="dashed",colour="black",size=0.75,alpha=0.8) + 
-  #Lockdown 1
-  geom_rect(data=world.weekly.df,aes(xmin=as.Date("2020-03-19",format="%Y-%m-%d"),xmax=as.Date("2020-06-05",format="%Y-%m-%d"),ymin=2.9E-5,ymax=3E-5),fill = "#fa9796",color = NA,alpha=0.02) +
-  geom_text(data=world.weekly.df,aes(x=as.Date("2020-05-01"),y=2.95E-5),label="Lockdown 1", color = "black", size = 2) +
-  geom_vline(data=world.weekly.df,xintercept=as.Date("2020-06-05",format="%Y-%m-%d"),linetype="dashed",colour="black",size=0.75,alpha=0.8) + 
-  #Re-opening Green PHASE
-  geom_rect(data=world.weekly.df,aes(xmin=as.Date("2020-06-05",format="%Y-%m-%d"),xmax=as.Date("2020-11-16",format="%Y-%m-%d"), ymin=2.9E-5,ymax=3E-5),fill = "#b5dea5",color = NA,alpha=0.02) +
-  geom_text(data=world.weekly.df,aes(x=as.Date("2020-08-15"),y=2.95E-5),label="Re-Opening", color = "black", size = 2) +
-  geom_vline(data=world.weekly.df,xintercept=as.Date("2020-11-16",format="%Y-%m-%d"),linetype="dashed",colour="black",size=0.75,alpha=0.8) + 
-  #Lockdown 2
-  geom_rect(data=world.weekly.df,aes(xmin=as.Date("2020-11-16",format="%Y-%m-%d"),xmax=as.Date("2020-12-31",format="%Y-%m-%d"), ymin=2.9E-5,ymax=3E-5),fill = "#fa9796",color = NA,alpha=0.02) +
-  geom_text(data=world.weekly.df,aes(x=as.Date("2020-12-10"),y=2.95E-5),label="Lockdown 2", color = "black", size = 2) +
-  theme_bw() + 
-  scale_alpha_manual(values = c(0.4, 1.1)) + 
-  scale_color_manual(values = c("gray", "blue", "black")) +
-  ggsave("time_series.pdf")
-```
-
-####US time analysis plots. 
+#### US time analysis plots. 
 ```{r, eval = TRUE}
 #Converting before lockdown and after lockdown rasters for US to data frames.  
 before.lockdown <- raster('./US_NO2_comparison/US_NO2_2020-01-19_start.tif') %>%
@@ -1507,7 +1317,7 @@ after.lockdown <- after.lockdown %>%
 #Plotting before and after maps. 
 p1 <- ggplot() +
   geom_raster(data = before.lockdown , aes(x = Longitude, y = Latitude, fill = NO2_concentration)) + 
-  geom_polygon(data = `United States.shp`, aes(x = long, y = lat, group = group), colour = "black", fill = NA) +
+  geom_polygon(data = wrld_simpl[wrld_simpl@data$NAME=="United States", ], aes(x = long, y = lat, group = group), colour = "black", fill = NA) +
   coord_quickmap(
     xlim = c(-123, -65),
     ylim = c(23, 49)
@@ -1518,7 +1328,7 @@ p1 <- ggplot() +
   
 p2 <- ggplot() +
   geom_raster(data = after.lockdown , aes(x = Longitude, y = Latitude, fill = NO2_concentration)) + 
-  geom_polygon(data = `United States.shp`, aes(x = long, y = lat, group = group), colour = "black", fill = NA) +
+  geom_polygon(data = wrld_simpl[wrld_simpl@data$NAME=="United States", ], aes(x = long, y = lat, group = group), colour = "black", fill = NA) +
   coord_quickmap(
     xlim = c(-123, -65),
     ylim = c(23, 49)
@@ -1531,12 +1341,12 @@ plot_grid(p1, p2, labels = "AUTO", ncol = 1)
 rm(p1, p2)
 ```
 
-####US time analysis (violin plots).
+#### US time analysis (violin plots).
 ```{r, eval = TRUE}
 #Function for finding medians over each time period. 
 US_NO2_median <- function(x) {
   r <- raster(paste0("./US_NO2_Comparison/", (x))) %>% flip(direction='y')
-  r.vals <- raster::extract(r, `United States.shp`)
+  r.vals <- raster::extract(r, wrld_simpl[wrld_simpl@data$NAME=="United States", ])
   lapply(r.vals, FUN=median, na.rm = TRUE)
 }
 US_NO2_median("US_NO2_2020-01-19_start.tif")
@@ -1545,7 +1355,7 @@ US_NO2_median("US_NO2_2020-03-19_start.tif")
 #Function for finding averages over each time period. 
 US_NO2_average <- function(x) {
   r <- raster(paste0("./US_NO2_Comparison/", (x))) %>% flip(direction='y')
-  r.vals <- raster::extract(r, `United States.shp`)
+  r.vals <- raster::extract(r, wrld_simpl[wrld_simpl@data$NAME=="United States", ])
   lapply(r.vals, FUN=mean, na.rm = TRUE)
 }
 US_NO2_average("US_NO2_2020-01-19_start.tif")
@@ -1554,16 +1364,16 @@ US_NO2_average("US_NO2_2020-03-19_start.tif")
 #2019 violin plot
 US_2019_violin <- function(x, y) {
   r1 <- raster(paste0("./US_NO2_Comparison/", (x))) %>% flip(direction='y')
-  r1 <- crop(r1, extent(`United States.shp`))
-  mask(r1, `United States.shp`)
+  r1 <- crop(r1, extent(wrld_simpl[wrld_simpl@data$NAME=="United States", ]))
+  mask(r1, wrld_simpl[wrld_simpl@data$NAME=="United States", ])
   r1 <- r1 %>% rasterToPoints() %>% data.frame()
   vec <- rep("Jan-March 2019", length.out = nrow(r1)) %>% as.data.frame()
   r1 <- cbind(vec, r1)
   names(r1)[1] <- "Timeframe"
   names(r1)[4] <- "NO2_Concentration"
   r2 <- raster(paste0("./US_NO2_Comparison/", (y))) %>% flip(direction='y')
-  r2 <- crop(r2, extent(`United States.shp`))
-  mask(r2, `United States.shp`)
+  r2 <- crop(r2, extent(wrld_simpl[wrld_simpl@data$NAME=="United States", ]))
+  mask(r2, wrld_simpl[wrld_simpl@data$NAME=="United States", ])
   r2 <- r2 %>% rasterToPoints() %>% data.frame()
   vec <- rep("March-May 2019", length.out = nrow(r2)) %>% as.data.frame()
   r2 <- cbind(vec, r2)
@@ -1581,16 +1391,16 @@ US_2019_violin("US_NO2_2019-01-19_start.tif", "US_NO2_2019-03-19_start.tif")
 #2020 violin plot
 US_2020_violin <- function(x, y) {
   r1 <- raster(paste0("./US_NO2_Comparison/", (x))) %>% flip(direction='y')
-  r1 <- crop(r1, extent(`United States.shp`))
-  mask(r1, `United States.shp`)
+  r1 <- crop(r1, extent(wrld_simpl[wrld_simpl@data$NAME=="United States", ]))
+  mask(r1, wrld_simpl[wrld_simpl@data$NAME=="United States", ])
   r1 <- r1 %>% rasterToPoints() %>% data.frame()
   vec <- rep("Jan-March 2020", length.out = nrow(r1)) %>% as.data.frame()
   r1 <- cbind(vec, r1)
   names(r1)[1] <- "Timeframe"
   names(r1)[4] <- "NO2_Concentration"
   r2 <- raster(paste0("./US_NO2_Comparison/", (y))) %>% flip(direction='y')
-  r2 <- crop(r2, extent(`United States.shp`))
-  mask(r2, `United States.shp`)
+  r2 <- crop(r2, extent(wrld_simpl[wrld_simpl@data$NAME=="United States", ]))
+  mask(r2, wrld_simpl[wrld_simpl@data$NAME=="United States", ])
   r2 <- r2 %>% rasterToPoints() %>% data.frame()
   vec <- rep("March-May 2020", length.out = nrow(r2)) %>% as.data.frame()
   r2 <- cbind(vec, r2)
@@ -1608,16 +1418,16 @@ US_2020_violin("US_NO2_2020-01-19_start.tif", "US_NO2_2020-03-19_start.tif")
 #2021 violin plot
 US_2021_violin <- function(x, y) {
   r1 <- raster(paste0("./US_NO2_Comparison/", (x))) %>% flip(direction='y')
-  r1 <- crop(r1, extent(`United States.shp`))
-  mask(r1, `United States.shp`)
+  r1 <- crop(r1, extent(wrld_simpl[wrld_simpl@data$NAME=="United States", ]))
+  mask(r1, wrld_simpl[wrld_simpl@data$NAME=="United States", ])
   r1 <- r1 %>% rasterToPoints() %>% data.frame()
   vec <- rep("Jan-March 2021", length.out = nrow(r1)) %>% as.data.frame()
   r1 <- cbind(vec, r1)
   names(r1)[1] <- "Timeframe"
   names(r1)[4] <- "NO2_Concentration"
   r2 <- raster(paste0("./US_NO2_Comparison/", (y))) %>% flip(direction='y')
-  r2 <- crop(r2, extent(us.shp))
-  mask(r2, us.shp)
+  r2 <- crop(r2, extent(wrld_simpl[wrld_simpl@data$NAME=="United States", ]))
+  mask(r2, wrld_simpl[wrld_simpl@data$NAME=="United States", ])
   r2 <- r2 %>% rasterToPoints() %>% data.frame()
   vec <- rep("March-May 2021", length.out = nrow(r2)) %>% as.data.frame()
   r2 <- cbind(vec, r2)
@@ -1635,48 +1445,48 @@ US_2021_violin("US_NO2_2021-01-19_start.tif", "US_NO2_2021-03-19_start.tif")
 #All violin plots in 1 graph:
 US_violin <- function(a, b, c, d, e, f) {
   r1 <- raster(paste0("./US_NO2_Comparison/", (a))) %>% flip(direction='y')
-  r1 <- crop(r1, extent(`United States.shp`))
-  mask(r1, `United States.shp`)
+  r1 <- crop(r1, extent(wrld_simpl[wrld_simpl@data$NAME=="United States", ]))
+  mask(r1, wrld_simpl[wrld_simpl@data$NAME=="United States", ])
   r1 <- r1 %>% rasterToPoints() %>% data.frame()
   vec <- rep("Jan-March 2019", length.out = nrow(r1)) %>% as.data.frame()
   r1 <- cbind(vec, r1)
   names(r1)[1] <- "Timeframe"
   names(r1)[4] <- "NO2_Concentration"
   r2 <- raster(paste0("./US_NO2_Comparison/", (b))) %>% flip(direction='y')
-  r2 <- crop(r2, extent(`United States.shp`))
-  mask(r2, `United States.shp`)
+  r2 <- crop(r2, extent(wrld_simpl[wrld_simpl@data$NAME=="United States", ]))
+  mask(r2, wrld_simpl[wrld_simpl@data$NAME=="United States", ])
   r2 <- r2 %>% rasterToPoints() %>% data.frame()
   vec <- rep("March-May 2019", length.out = nrow(r2)) %>% as.data.frame()
   r2 <- cbind(vec, r2)
   names(r2)[1] <- "Timeframe"
   names(r2)[4] <- "NO2_Concentration"
   r3 <- raster(paste0("./US_NO2_Comparison/", (c))) %>% flip(direction='y')
-  r3 <- crop(r3, extent(`United States.shp`))
-  mask(r3, `United States.shp`)
+  r3 <- crop(r3, extent(wrld_simpl[wrld_simpl@data$NAME=="United States", ]))
+  mask(r3, wrld_simpl[wrld_simpl@data$NAME=="United States", ])
   r3 <- r3 %>% rasterToPoints() %>% data.frame()
   vec <- rep("Jan-March 2020", length.out = nrow(r3)) %>% as.data.frame()
   r3 <- cbind(vec, r3)
   names(r3)[1] <- "Timeframe"
   names(r3)[4] <- "NO2_Concentration"
   r4 <- raster(paste0("./US_NO2_Comparison/", (d))) %>% flip(direction='y')
-  r4 <- crop(r4, extent(`United States.shp`))
-  mask(r4, `United States.shp`)
+  r4 <- crop(r4, extent(wrld_simpl[wrld_simpl@data$NAME=="United States", ]))
+  mask(r4, wrld_simpl[wrld_simpl@data$NAME=="United States", ])
   r4 <- r4 %>% rasterToPoints() %>% data.frame()
   vec <- rep("March-May 2020", length.out = nrow(r4)) %>% as.data.frame()
   r4 <- cbind(vec, r4)
   names(r4)[1] <- "Timeframe"
   names(r4)[4] <- "NO2_Concentration"
   r5 <- raster(paste0("./US_NO2_Comparison/", (e))) %>% flip(direction='y')
-  r5 <- crop(r5, extent(`United States.shp`))
-  mask(r5, `United States.shp`)
+  r5 <- crop(r5, extent(wrld_simpl[wrld_simpl@data$NAME=="United States", ]))
+  mask(r5, wrld_simpl[wrld_simpl@data$NAME=="United States", ])
   r5 <- r5 %>% rasterToPoints() %>% data.frame()
   vec <- rep("Jan-March 2021", length.out = nrow(r5)) %>% as.data.frame()
   r5 <- cbind(vec, r5)
   names(r5)[1] <- "Timeframe"
   names(r5)[4] <- "NO2_Concentration"
   r6 <- raster(paste0("./US_NO2_Comparison/", (f))) %>% flip(direction='y')
-  r6 <- crop(r6, extent(`United States.shp`))
-  mask(r6, `United States.shp`)
+  r6 <- crop(r6, extent(wrld_simpl[wrld_simpl@data$NAME=="United States", ]))
+  mask(r6, wrld_simpl[wrld_simpl@data$NAME=="United States", ])
   r6 <- r6 %>% rasterToPoints() %>% data.frame()
   vec <- rep("March-May 2021", length.out = nrow(r6)) %>% as.data.frame()
   r6 <- cbind(vec, r6)
@@ -1694,15 +1504,15 @@ US_violin <- function(a, b, c, d, e, f) {
 US_violin("US_NO2_2019-01-19_start.tif", "US_NO2_2019-03-19_start.tif", "US_NO2_2020-01-19_start.tif", "US_NO2_2020-03-19_start.tif", "US_NO2_2021-01-19_start.tif", "US_NO2_2021-03-19_start.tif")
 ```
 
-####US time analysis (box plots).
+#### US time analysis (box plots).
 ```{r, eval = TRUE}
 US_2019_boxplot <- function(x, y) {
   r1 <- raster(paste0("./US_NO2_Comparison/", (x))) %>% flip(direction='y')
-  r1 <- crop(r1, extent(`United States.shp`))
-  mask(r1, `United States.shp`)
+  r1 <- crop(r1, extent(wrld_simpl[wrld_simpl@data$NAME=="United States", ]))
+  mask(r1, wrld_simpl[wrld_simpl@data$NAME=="United States", ])
   r2 <- raster(paste0("./US_NO2_Comparison/", (y))) %>% flip(direction='y')
-  r2 <- crop(r2, extent(`United States.shp`))
-  mask(r2, `United States.shp`)
+  r2 <- crop(r2, extent(wrld_simpl[wrld_simpl@data$NAME=="United States", ]))
+  mask(r2, wrld_simpl[wrld_simpl@data$NAME=="United States", ])
   s <- stack(r1, r2)
   boxplot(s, col=c('red', 'blue'), 
           main='US NO2: 2019 Seasonal Change', 
@@ -1713,11 +1523,11 @@ US_2019_boxplot("US_NO2_2019-01-19_start.tif", "US_NO2_2019-03-19_start.tif")
 
 US_2020_boxplot <- function(x, y) {
   r1 <- raster(paste0("./US_NO2_Comparison/", (x))) %>% flip(direction='y')
-  r1 <- crop(r1, extent(`United States.shp`))
-  mask(r1, `United States.shp`)
+  r1 <- crop(r1, extent(wrld_simpl[wrld_simpl@data$NAME=="United States", ]))
+  mask(r1, wrld_simpl[wrld_simpl@data$NAME=="United States", ])
   r2 <- raster(paste0("./US_NO2_Comparison/", (y))) %>% flip(direction='y')
-  r2 <- crop(r2, extent(`United States.shp`))
-  mask(r2, `United States.shp`)
+  r2 <- crop(r2, extent(wrld_simpl[wrld_simpl@data$NAME=="United States", ]))
+  mask(r2, wrld_simpl[wrld_simpl@data$NAME=="United States", ])
   s <- stack(r1, r2)
   boxplot(s, col=c('red', 'blue'), 
           main='US NO2 Before and After COVID-19', 
@@ -1728,11 +1538,11 @@ US_2020_boxplot("US_NO2_2020-01-19_start.tif", "US_NO2_2020-03-19_start.tif")
 
 US_2021_boxplot <- function(x, y) {
   r1 <- raster(paste0("./US_NO2_Comparison/", (x))) %>% flip(direction='y')
-  r1 <- crop(r1, extent(`United States.shp`))
-  mask(r1, `United States.shp`)
+  r1 <- crop(r1, extent(wrld_simpl[wrld_simpl@data$NAME=="United States", ]))
+  mask(r1, wrld_simpl[wrld_simpl@data$NAME=="United States", ])
   r2 <- raster(paste0("./US_NO2_Comparison/", (y))) %>% flip(direction='y')
-  r2 <- crop(r2, extent(`United States.shp`))
-  mask(r2, `United States.shp`)
+  r2 <- crop(r2, extent(wrld_simpl[wrld_simpl@data$NAME=="United States", ]))
+  mask(r2, wrld_simpl[wrld_simpl@data$NAME=="United States", ])
   s <- stack(r1, r2)
   boxplot(s, col=c('red', 'blue'), 
           main='US NO2: 2021 Seasonal Change', 
@@ -1742,10 +1552,8 @@ US_2021_boxplot <- function(x, y) {
 US_2021_boxplot("US_NO2_2021-01-19_start.tif", "US_NO2_2021-03-19_start.tif")
 ```
 
-####China time analysis plots. 
+#### China time analysis plots. 
 ```{r, eval = TRUE}
-China.shp <- wrld_simpl[wrld_simpl$NAME=="China", ]
-
 #Converting before lockdown and after lockdown rasters for US to data frames.  
 before.lockdown <- raster('./China_NO2_comparison/China_NO2_2019-11-23_start.tif') %>%
   flip(direction='y') %>%
@@ -1766,7 +1574,7 @@ after.lockdown <- after.lockdown %>%
 #Plotting before and after maps. 
 p1 <- ggplot() +
   geom_raster(data = before.lockdown , aes(x = Longitude, y = Latitude, fill = NO2_concentration)) + 
-  geom_polygon(data = China.shp, aes(x = long, y = lat, group = group), colour = "black", fill = NA) +
+  geom_polygon(data = wrld_simpl[wrld_simpl@data$NAME=="China", ], aes(x = long, y = lat, group = group), colour = "black", fill = NA) +
   coord_quickmap() +
   labs(fill = "NO2 Concentration \n(mol/m^2)") +
   scale_fill_viridis_c(limits = c(0, 0.0005)) +
@@ -1774,7 +1582,7 @@ p1 <- ggplot() +
   
 p2 <- ggplot() +
   geom_raster(data = after.lockdown , aes(x = Longitude, y = Latitude, fill = NO2_concentration)) + 
-  geom_polygon(data = China.shp, aes(x = long, y = lat, group = group), colour = "black", fill = NA) +
+  geom_polygon(data = wrld_simpl[wrld_simpl@data$NAME=="China", ], aes(x = long, y = lat, group = group), colour = "black", fill = NA) +
   coord_quickmap() +
   labs(fill = "NO2 Concentration \n(mol/m^2)") +
   scale_fill_viridis_c(limits = c(0, 0.0005)) +
@@ -1784,12 +1592,12 @@ plot_grid(p1, p2, labels = "AUTO", ncol = 1)
 rm(p1, p2)
 ```
 
-####China time analysis (violin).
+#### China time analysis (violin).
 ```{r, eval = TRUE}
 #Function for finding medians over each time period. 
 China_NO2_median <- function(x) {
   r <- raster(paste0("./China_NO2_Comparison/", (x))) %>% flip(direction='y')
-  r.vals <- raster::extract(r, China.shp)
+  r.vals <- raster::extract(r, wrld_simpl[wrld_simpl@data$NAME=="China", ])
   lapply(r.vals, FUN=median, na.rm = TRUE)
 }
 China_NO2_median("China_NO2_2019-11-23_start.tif")
@@ -1798,7 +1606,7 @@ China_NO2_median("China_NO2_2020-01-23_start.tif")
 #Function for finding averages over each time period. 
 China_NO2_average <- function(x) {
   r <- raster(paste0("./China_NO2_Comparison/", (x))) %>% flip(direction='y')
-  r.vals <- raster::extract(r, China.shp)
+  r.vals <- raster::extract(r, wrld_simpl[wrld_simpl@data$NAME=="China", ])
   lapply(r.vals, FUN=mean, na.rm = TRUE)
 }
 China_NO2_average("China_NO2_2019-11-23_start.tif")
@@ -1807,16 +1615,16 @@ China_NO2_average("China_NO2_2020-01-23_start.tif")
 #2019 violin plot
 China_2019_violin <- function(x, y) {
   r1 <- raster(paste0("./China_NO2_Comparison/", (x))) %>% flip(direction='y')
-  r1 <- crop(r1, extent(China.shp))
-  mask(r1, China.shp)
+  r1 <- crop(r1, extent(wrld_simpl[wrld_simpl@data$NAME=="China", ]))
+  mask(r1, wrld_simpl[wrld_simpl@data$NAME=="China", ])
   r1 <- r1 %>% rasterToPoints() %>% data.frame()
   vec <- rep("Nov2018-Jan2019", length.out = nrow(r1)) %>% as.data.frame()
   r1 <- cbind(vec, r1)
   names(r1)[1] <- "Timeframe"
   names(r1)[4] <- "NO2_Concentration"
   r2 <- raster(paste0("./China_NO2_Comparison/", (y))) %>% flip(direction='y')
-  r2 <- crop(r2, extent(China.shp))
-  mask(r2, China.shp)
+  r2 <- crop(r2, extent(wrld_simpl[wrld_simpl@data$NAME=="China", ]))
+  mask(r2, wrld_simpl[wrld_simpl@data$NAME=="China", ])
   r2 <- r2 %>% rasterToPoints() %>% data.frame()
   vec <- rep("Jan-March 2019", length.out = nrow(r2)) %>% as.data.frame()
   r2 <- cbind(vec, r2)
@@ -1835,16 +1643,16 @@ China_2019_violin("China_NO2_2018-11-23_start.tif", "China_NO2_2019-01-23_start.
 #2020 violin plot
 China_2020_violin <- function(x, y) {
   r1 <- raster(paste0("./China_NO2_Comparison/", (x))) %>% flip(direction='y')
-  r1 <- crop(r1, extent(China.shp))
-  mask(r1, China.shp)
+  r1 <- crop(r1, extent(wrld_simpl[wrld_simpl@data$NAME=="China", ]))
+  mask(r1, wrld_simpl[wrld_simpl@data$NAME=="China", ])
   r1 <- r1 %>% rasterToPoints() %>% data.frame()
   vec <- rep("Nov2019-Jan2020", length.out = nrow(r1)) %>% as.data.frame()
   r1 <- cbind(vec, r1)
   names(r1)[1] <- "Timeframe"
   names(r1)[4] <- "NO2_Concentration"
   r2 <- raster(paste0("./China_NO2_Comparison/", (y))) %>% flip(direction='y')
-  r2 <- crop(r2, extent(China.shp))
-  mask(r2, China.shp)
+  r2 <- crop(r2, extent(wrld_simpl[wrld_simpl@data$NAME=="China", ]))
+  mask(r2, wrld_simpl[wrld_simpl@data$NAME=="China", ])
   r2 <- r2 %>% rasterToPoints() %>% data.frame()
   vec <- rep("Jan-March 2020", length.out = nrow(r2)) %>% as.data.frame()
   r2 <- cbind(vec, r2)
@@ -1863,16 +1671,16 @@ China_2020_violin("China_NO2_2019-11-23_start.tif", "China_NO2_2020-01-23_start.
 #2021 violin plot
 China_2021_violin <- function(x, y) {
   r1 <- raster(paste0("./China_NO2_Comparison/", (x))) %>% flip(direction='y')
-  r1 <- crop(r1, extent(China.shp))
-  mask(r1, China.shp)
+  r1 <- crop(r1, extent(wrld_simpl[wrld_simpl@data$NAME=="China", ]))
+  mask(r1, wrld_simpl[wrld_simpl@data$NAME=="China", ])
   r1 <- r1 %>% rasterToPoints() %>% data.frame()
   vec <- rep("Nov2020-Jan2021", length.out = nrow(r1)) %>% as.data.frame()
   r1 <- cbind(vec, r1)
   names(r1)[1] <- "Timeframe"
   names(r1)[4] <- "NO2_Concentration"
   r2 <- raster(paste0("./China_NO2_Comparison/", (y))) %>% flip(direction='y')
-  r2 <- crop(r2, extent(China.shp))
-  mask(r2, China.shp)
+  r2 <- crop(r2, extent(wrld_simpl[wrld_simpl@data$NAME=="China", ]))
+  mask(r2, wrld_simpl[wrld_simpl@data$NAME=="China", ])
   r2 <- r2 %>% rasterToPoints() %>% data.frame()
   vec <- rep("Jan-March 2021", length.out = nrow(r2)) %>% as.data.frame()
   r2 <- cbind(vec, r2)
@@ -1891,48 +1699,48 @@ China_2021_violin("China_NO2_2020-11-23_start.tif", "China_NO2_2021-01-23_start.
 #All violin plots in 1 graph: 
 China_violin <- function(a, b, c, d, e, f) {
   r1 <- raster(paste0("./China_NO2_Comparison/", (a))) %>% flip(direction='y')
-  r1 <- crop(r1, extent(China.shp))
-  mask(r1, China.shp)
+  r1 <- crop(r1, extent(wrld_simpl[wrld_simpl@data$NAME=="China", ]))
+  mask(r1, wrld_simpl[wrld_simpl@data$NAME=="China", ])
   r1 <- r1 %>% rasterToPoints() %>% data.frame()
   vec <- rep("Nov2018-Jan2019", length.out = nrow(r1)) %>% as.data.frame()
   r1 <- cbind(vec, r1)
   names(r1)[1] <- "Timeframe"
   names(r1)[4] <- "NO2_Concentration"
   r2 <- raster(paste0("./China_NO2_Comparison/", (b))) %>% flip(direction='y')
-  r2 <- crop(r2, extent(China.shp))
-  mask(r2, China.shp)
+  r2 <- crop(r2, extent(wrld_simpl[wrld_simpl@data$NAME=="China", ]))
+  mask(r2, wrld_simpl[wrld_simpl@data$NAME=="China", ])
   r2 <- r2 %>% rasterToPoints() %>% data.frame()
   vec <- rep("Jan-March 2019", length.out = nrow(r2)) %>% as.data.frame()
   r2 <- cbind(vec, r2)
   names(r2)[1] <- "Timeframe"
   names(r2)[4] <- "NO2_Concentration"
   r3 <- raster(paste0("./China_NO2_Comparison/", (c))) %>% flip(direction='y')
-  r3 <- crop(r3, extent(China.shp))
-  mask(r3, China.shp)
+  r3 <- crop(r3, extent(wrld_simpl[wrld_simpl@data$NAME=="China", ]))
+  mask(r3, wrld_simpl[wrld_simpl@data$NAME=="China", ])
   r3 <- r3 %>% rasterToPoints() %>% data.frame()
   vec <- rep("Nov2019-Jan2020", length.out = nrow(r3)) %>% as.data.frame()
   r3 <- cbind(vec, r3)
   names(r3)[1] <- "Timeframe"
   names(r3)[4] <- "NO2_Concentration"
   r4 <- raster(paste0("./China_NO2_Comparison/", (d))) %>% flip(direction='y')
-  r4 <- crop(r4, extent(China.shp))
-  mask(r4, China.shp)
+  r4 <- crop(r4, extent(wrld_simpl[wrld_simpl@data$NAME=="China", ]))
+  mask(r4, wrld_simpl[wrld_simpl@data$NAME=="China", ])
   r4 <- r4 %>% rasterToPoints() %>% data.frame()
   vec <- rep("Jan-March 2020", length.out = nrow(r4)) %>% as.data.frame()
   r4 <- cbind(vec, r4)
   names(r4)[1] <- "Timeframe"
   names(r4)[4] <- "NO2_Concentration"
   r5 <- raster(paste0("./China_NO2_Comparison/", (e))) %>% flip(direction='y')
-  r5 <- crop(r5, extent(China.shp))
-  mask(r5, China.shp)
+  r5 <- crop(r5, extent(wrld_simpl[wrld_simpl@data$NAME=="China", ]))
+  mask(r5, wrld_simpl[wrld_simpl@data$NAME=="China", ])
   r5 <- r5 %>% rasterToPoints() %>% data.frame()
   vec <- rep("Nov2020-Jan2021", length.out = nrow(r5)) %>% as.data.frame()
   r5 <- cbind(vec, r5)
   names(r5)[1] <- "Timeframe"
   names(r5)[4] <- "NO2_Concentration"
   r6 <- raster(paste0("./China_NO2_Comparison/", (f))) %>% flip(direction='y')
-  r6 <- crop(r6, extent(China.shp))
-  mask(r6, China.shp)
+  r6 <- crop(r6, extent(wrld_simpl[wrld_simpl@data$NAME=="China", ]))
+  mask(r6, wrld_simpl[wrld_simpl@data$NAME=="China", ])
   r6 <- r6 %>% rasterToPoints() %>% data.frame()
   vec <- rep("Jan-March 2021", length.out = nrow(r6)) %>% as.data.frame()
   r6 <- cbind(vec, r6)
@@ -1950,15 +1758,15 @@ China_violin <- function(a, b, c, d, e, f) {
 China_violin("China_NO2_2018-11-23_start.tif", "China_NO2_2019-01-23_start.tif", "China_NO2_2019-11-23_start.tif", "China_NO2_2020-01-23_start.tif", "China_NO2_2020-11-23_start.tif", "China_NO2_2021-01-23_start.tif")
 ```
 
-####China time analysis (boxplots).
+#### China time analysis (boxplots).
 ```{r, eval = TRUE}
 China_2019_change <- function(x, y) {
   r1 <- raster(paste0("./China_NO2_Comparison/", (x))) %>% flip(direction='y')
-  r1 <- crop(r1, extent(China.shp))
-  mask(r1, us.shp)
+  r1 <- crop(r1, extent(wrld_simpl[wrld_simpl@data$NAME=="China", ]))
+  mask(r1, wrld_simpl[wrld_simpl@data$NAME=="China", ])
   r2 <- raster(paste0("./China_NO2_Comparison/", (y))) %>% flip(direction='y')
-  r2 <- crop(r2, extent(China.shp))
-  mask(r2, us.shp)
+  r2 <- crop(r2, extent(wrld_simpl[wrld_simpl@data$NAME=="China", ]))
+  mask(r2, wrld_simpl[wrld_simpl@data$NAME=="China", ])
   s <- stack(r1, r2)
   boxplot(s, col=c('red', 'blue'), 
           main='China NO2: 2019 Seasonal Change', 
@@ -1969,11 +1777,11 @@ China_2019_change("China_NO2_2018-11-23_start.tif", "China_NO2_2019-01-23_start.
 
 China_2020_change <- function(x, y) {
   r1 <- raster(paste0("./China_NO2_Comparison/", (x))) %>% flip(direction='y')
-  r1 <- crop(r1, extent(China.shp))
-  mask(r1, us.shp)
+  r1 <- crop(r1, extent(wrld_simpl[wrld_simpl@data$NAME=="China", ]))
+  mask(r1, wrld_simpl[wrld_simpl@data$NAME=="China", ])
   r2 <- raster(paste0("./China_NO2_Comparison/", (y))) %>% flip(direction='y')
-  r2 <- crop(r2, extent(China.shp))
-  mask(r2, us.shp)
+  r2 <- crop(r2, extent(wrld_simpl[wrld_simpl@data$NAME=="China", ]))
+  mask(r2, wrld_simpl[wrld_simpl@data$NAME=="China", ])
   s <- stack(r1, r2)
   boxplot(s, col=c('red', 'blue'), 
           main='China NO2 Before and After COVID-19', 
@@ -1984,11 +1792,11 @@ China_2020_change("China_NO2_2019-11-23_start.tif", "China_NO2_2020-01-23_start.
 
 China_2021_change <- function(x, y) {
   r1 <- raster(paste0("./China_NO2_Comparison/", (x))) %>% flip(direction='y')
-  r1 <- crop(r1, extent(China.shp))
-  mask(r1, us.shp)
+  r1 <- crop(r1, extent(wrld_simpl[wrld_simpl@data$NAME=="China", ]))
+  mask(r1, wrld_simpl[wrld_simpl@data$NAME=="China", ])
   r2 <- raster(paste0("./China_NO2_Comparison/", (y))) %>% flip(direction='y')
-  r2 <- crop(r2, extent(China.shp))
-  mask(r2, us.shp)
+  r2 <- crop(r2, extent(wrld_simpl[wrld_simpl@data$NAME=="China", ]))
+  mask(r2, wrld_simpl[wrld_simpl@data$NAME=="China", ])
   s <- stack(r1, r2)
   boxplot(s, col=c('red', 'blue'), 
           main='China NO2: 2021 Seasonal Change', 
