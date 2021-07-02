@@ -206,8 +206,6 @@ plot(wrld_simpl, add = TRUE)
 
 ####Preparing data for world analysis. 
 ```{r, eval = TRUE}
-
----
 wrld_simpl@data$NAME <- as.character(wrld_simpl@data$NAME)
 
 #Changing shapefile country names to match COVID dataset:
@@ -252,15 +250,8 @@ extraction.fxn <- function(x) {
 
 #Extracting mean NO2 values and adding to coordinates data to make final data frame.
 country.shp.list <- wrld_simpl@data$NAME
-
-total.df = data.frame()
-for (i in country.shp.list) {
-    # vector output
-    country.df <- extraction.fxn(i) 
-    # add vector to premade dataframe
-    df <- data.frame(country.df)
-    total.df <- rbind(total.df,df)
-}
+x <- country.shp.list
+total.df <- purrr::map_dfr(x, extraction.fxn)
 
 #Read in IHME regions data. 
 IHME.regions.df <- read.csv(file = 'IHME_regions.csv', header = TRUE) 
@@ -269,131 +260,6 @@ IHME.regions.df <- IHME.regions.df %>% rename(location = Countries) %>% dplyr::s
 #Merged geospatial data set with COVID data (variables come from COVID exploratory analysis RMD file). 
 covid.NO2.df <- right_join(IHME.regions.df, total.df, by = "location")
 covid.NO2.df <- full_join(covid.NO2.df, owid.countries, by = "location")
-covid.NO2.df$Regions <- as.factor(covid.NO2.df$Regions)
-covid.NO2.df$Super.region <- as.factor(covid.NO2.df$Super.region)
----
-  
-country.owid.list <- list(owid.countries$location)
-country.owid.list.shp <- list(paste0(owid.countries$location, ".shp"))
-
-countries.shp.fxn <- function(x) {
-  wrld_simpl[wrld_simpl$NAME==x, ]
-}
-
-#Makes shapefile for each country from world shapefile. 
-for(i in country.shp.list){
-  assign(paste0(i, ".shp"), countries.shp.fxn(i)) 
-}
-
-#Function to extract mean NO2 values by country shapefile. 
-extraction.fxn <- function(x) {
-  r.vals <- raster::extract(world.NO2.r, x)
-  r.mean <- lapply(r.vals, FUN=mean, na.rm = TRUE)
-  final.df <- data.frame(x@data, r.mean)  
-  rm(r.mean, r.vals)
-  names(final.df)[5] <- "location" 
-  names(final.df)[6] <- "Area" 
-  names(final.df)[10] <- "Longitude" 
-  names(final.df)[11] <- "Latitude" 
-  names(final.df)[12] <- "NO2_Concentration"
-  final.df <- final.df %>% select(location, Area, Longitude, Latitude, NO2_Concentration)
-}
-
-#Changing shapefile names to match COVID dataset:
-Brunei.shp <- `Brunei Darussalam.shp`
-  Brunei.shp$NAME <- as.character(Brunei.shp$NAME)
-  Brunei.shp@data[1,5] <- sub("Brunei Darussalam", "Brunei", Brunei.shp@data[1,5])
-  rm(`Brunei Darussalam.shp`)
-Czechia.shp <- `Czech Republic.shp`
-  Czechia.shp$NAME <- as.character(Czechia.shp$NAME)
-  Czechia.shp@data[1,5] <- sub("Czech Republic", "Czechia", Czechia.shp@data[1,5])
-  rm(`Czech Republic.shp`)
-`Democratic Republic of Congo.shp` <- `Democratic Republic of the Congo.shp`
-  `Democratic Republic of Congo.shp`$NAME <- as.character(`Democratic Republic of Congo.shp`$NAME)
-  `Democratic Republic of Congo.shp`@data[1,5] <- sub("Democratic Republic of the Congo", "Democratic Republic of Congo", `Democratic Republic of Congo.shp`@data[1,5])
-  rm(`Democratic Republic of the Congo.shp`)
-`Faeroe Islands.shp` <- `Faroe Islands.shp`
-  `Faeroe Islands.shp`@data[1,5] <- sub("Faroe Islands.shp", "Faeroe Islands.shp", `Faeroe Islands.shp`@data[1,5])
-  rm(`Faroe Islands.shp`)
-Iran.shp <- `Iran (Islamic Republic of).shp`
-  Iran.shp$NAME <- as.character(Iran.shp$NAME) 
-  Iran.shp@data$NAME[Iran.shp@data$NAME == "Iran (Islamic Republic of)"] <- "Iran"
-  rm(`Iran (Islamic Republic of).shp`)
-Laos.shp <-  `Lao People's Democratic Republic.shp`
-  Laos.shp$NAME <- as.character(Laos.shp$NAME)
-  Laos.shp@data[1,5] <- sub("Lao People's Democratic Republic", "Laos", Laos.shp@data[1,5])
-  rm(`Lao People's Democratic Republic.shp`)
-Libya.shp <- `Libyan Arab Jamahiriya.shp`
-  Libya.shp$NAME <- as.character(Libya.shp$NAME) 
-  Libya.shp@data[1,5] <- sub("Libyan Arab Jamahiriya", "Libya", Libya.shp@data[1,5])
-  rm(`Libyan Arab Jamahiriya.shp`)
-Moldova.shp <- `Republic of Moldova.shp`
-  Moldova.shp$NAME <- as.character(Moldova.shp$NAME) 
-  Moldova.shp@data[1,5] <- sub("Republic of Moldova", "Moldova", Moldova.shp@data[1,5])
-  rm(`Republic of Moldova.shp`)
-Myanmar.shp <- Burma.shp
-  Myanmar.shp$NAME <- as.character(Myanmar.shp$NAME) 
-  Myanmar.shp@data[1,5] <- sub("Burma", "Myanmar", Myanmar.shp@data[1,5])
-  rm(Burma.shp)
-`South Korea.shp` <- `Korea, Republic of.shp`
-  `South Korea.shp`$NAME <- as.character(`South Korea.shp`$NAME) 
-  `South Korea.shp`@data[1,5] <- sub("Korea, Republic of", "South Korea", `South Korea.shp`@data[1,5])
-  rm(`Korea, Republic of.shp`)
-`North Korea.shp` <- `Korea, Democratic People's Republic of.shp`
-  `North Korea.shp`$NAME <- as.character(`North Korea.shp`$NAME) 
-  `North Korea.shp`@data[1,5] <- sub("Korea, Democratic People's Republic of", "North Korea",`North Korea.shp`@data[1,5])
-  rm(`Korea, Democratic People's Republic of.shp`)
-`Syria.shp` <- `Syrian Arab Republic.shp`
-  Syria.shp$NAME <- as.character(Syria.shp$NAME) 
-  Syria.shp@data[1,5] <- sub("Syrian Arab Republic", "Syria", Syria.shp@data[1,5])
-  rm(`Syrian Arab Republic.shp`)
-`North Macedonia.shp` <- `The former Yugoslav Republic of Macedonia.shp`
-  `North Macedonia.shp`$NAME <- as.character(`North Macedonia.shp`$NAME) 
-  `North Macedonia.shp`@data[1,5] <- sub("The former Yugoslav Republic of Macedonia", "North Macedonia", `North Macedonia.shp`@data[1,5])
-  rm(`The former Yugoslav Republic of Macedonia.shp`)
-Macao.shp <- Macau.shp
-  Macao.shp$NAME <- as.character(Macao.shp$NAME) 
-  Macao.shp@data[1,5] <- sub("Macao", "Macao", Macao.shp@data[1,5])
-  rm(`Macau.shp`)
-`Micronesia (country).shp` <- `Micronesia, Federated States of.shp`
-  `Micronesia (country).shp`$NAME <- as.character(`Micronesia (country).shp`$NAME) 
-  `Micronesia (country).shp`@data$NAME[`Micronesia (country).shp`@data$NAME == "Micronesia, Federated States of"] <- "Micronesia (country)"  
-  rm(`Micronesia, Federated States of.shp`)
-Timor.shp <- `Timor-Leste.shp`
-  Timor.shp$NAME <- as.character(Timor.shp$NAME) 
-  Timor.shp@data[1,5] <- sub("Timor-Leste", "Timor", Timor.shp@data[1,5])
-  rm(`Timor-Leste.shp`)
-Vatican.shp <- `Holy See (Vatican City).shp`
-  Vatican.shp$NAME <- as.character(Vatican.shp$NAME) 
-  Vatican.shp@data$NAME[Vatican.shp@data$NAME == "Holy See (Vatican City)"] <- "Vatican"  
-  rm(`Holy See (Vatican City).shp`)
-Vietnam.shp <- `Viet Nam.shp`
-  Vietnam.shp$NAME <- as.character(Vietnam.shp$NAME) 
-  Vietnam.shp@data[1,5] <- sub("Viet Nam", "Vietnam", Vietnam.shp@data[1,5])
-  rm(`Viet Nam.shp`)
-`Wallis and Futuna.shp` <- `Wallis and Futuna Islands.shp`
-  `Wallis and Futuna.shp`$NAME <- as.character(`Wallis and Futuna.shp`$NAME) 
-  `Wallis and Futuna.shp`@data[1,5] <- sub("Wallis and Futuna Islands.shp", "Wallis and Futuna.shp", `Wallis and Futuna.shp`@data[1,5])
-  rm(`Wallis and Futuna Islands.shp`)
-
-#Extracting mean NO2 values and adding to coordinates data to make final data frame.
-  #Missing from shapefiles: Kosovo, Tanzania, Eswatini
-total.df = data.frame()
-for (i in c(Afghanistan.shp, Albania.shp, Algeria.shp, Andorra.shp, Angola.shp, `Antigua and Barbuda.shp`, Argentina.shp, Armenia.shp, Aruba.shp, Australia.shp, Austria.shp, Azerbaijan.shp, Bahamas.shp, Bahrain.shp, Bangladesh.shp, Barbados.shp, Belarus.shp, Belgium.shp, Belize.shp, Benin.shp, Bermuda.shp, Bhutan.shp, Bolivia.shp, `Bosnia and Herzegovina.shp`, Botswana.shp, Brazil.shp, Brunei.shp, Bulgaria.shp, `Burkina Faso.shp`, Burundi.shp, Cambodia.shp, Cameroon.shp, Canada.shp, `Cape Verde.shp`, `Cayman Islands.shp`, `Central African Republic.shp`, Chad.shp, Chile.shp, China.shp, Colombia.shp, Comoros.shp, Congo.shp, `Cook Islands.shp`, `Costa Rica.shp`, `Cote d'Ivoire.shp`, Croatia.shp, Cuba.shp, Cyprus.shp, Czechia.shp, `Democratic Republic of Congo.shp`, Denmark.shp, Djibouti.shp, Dominica.shp, `Dominican Republic.shp`, Ecuador.shp, Egypt.shp, `El Salvador.shp`, `Equatorial Guinea.shp`, Eritrea.shp, Estonia.shp, Ethiopia.shp, `Faeroe Islands.shp`, Fiji.shp, Finland.shp, France.shp, `French Polynesia.shp`, Gabon.shp, Gambia.shp, Georgia.shp, Germany.shp, Ghana.shp, Gibraltar.shp, Greece.shp, Grenada.shp, Guatemala.shp, Guernsey.shp, Guinea.shp, `Guinea-Bissau.shp`, Guyana.shp, Haiti.shp, Honduras.shp, `Hong Kong.shp`, Hungary.shp, Iceland.shp, India.shp, Indonesia.shp, Iran.shp, Iraq.shp, Ireland.shp, `Isle of Man.shp`, Israel.shp, Italy.shp, Jamaica.shp, Japan.shp, Jordan.shp, Kazakhstan.shp, Kenya.shp, Kiribati.shp, Kuwait.shp, Kyrgyzstan.shp, Laos.shp, Latvia.shp, Lebanon.shp, Lesotho.shp, Liberia.shp, Libya.shp, Liechtenstein.shp, Lithuania.shp, Luxembourg.shp, Macao.shp, Madagascar.shp, Malawi.shp, Malaysia.shp, Maldives.shp, Mali.shp, Malta.shp, `Marshall Islands.shp`, Mauritania.shp, Mauritius.shp, Mexico.shp, `Micronesia (country).shp`, Moldova.shp, Monaco.shp, Mongolia.shp, Montenegro.shp, Morocco.shp, Mozambique.shp, Myanmar.shp, Namibia.shp, Nepal.shp, Netherlands.shp, `New Zealand.shp`, Nicaragua.shp, Niger.shp, Nigeria.shp, `North Macedonia.shp`, Norway.shp, Oman.shp, Pakistan.shp, Palestine.shp, Panama.shp, `Papua New Guinea.shp`, Paraguay.shp, Peru.shp, Philippines.shp, Poland.shp, Portugal.shp, Qatar.shp, Romania.shp, Russia.shp, Rwanda.shp, `Saint Kitts and Nevis.shp`, `Saint Lucia.shp`, `Saint Vincent and the Grenadines.shp`, Samoa.shp, `San Marino.shp`, `Sao Tome and Principe.shp`, `Saudi Arabia.shp`, Senegal.shp, Serbia.shp, Seychelles.shp, `Sierra Leone.shp`, Singapore.shp, Slovakia.shp, Slovenia.shp, `Solomon Islands.shp`, Somalia.shp, `South Africa.shp`, `South Korea.shp`, `South Sudan.shp`, Spain.shp, `Sri Lanka.shp`, Sudan.shp, Suriname.shp, Sweden.shp, Switzerland.shp, Syria.shp, Taiwan.shp, Tajikistan.shp, Thailand.shp, Timor.shp, Togo.shp, `Trinidad and Tobago.shp`, Tunisia.shp, Turkey.shp, Uganda.shp, Ukraine.shp, `United Arab Emirates.shp`, `United Kingdom.shp`, `United States.shp`, Uruguay.shp, Uzbekistan.shp, Vanuatu.shp, Vatican.shp, Venezuela.shp, Vietnam.shp, `Wallis and Futuna.shp`, Yemen.shp, Zambia.shp, Zimbabwe.shp)) {
-    # vector output
-    country.df <- extraction.fxn(i) 
-    # add vector to premade dataframe
-    df <- data.frame(country.df)
-    total.df <- rbind(total.df,df)
-}
-
-#Read in IHME regions data. 
-IHME.regions.df <- read.csv(file = 'IHME_regions.csv', header = TRUE) 
-IHME.regions.df <- IHME.regions.df %>% rename(location = Countries) %>% select("Super.region", "Regions", "location")
-
-#Merged geospatial data set with COVID data (variables come from COVID exploratory analysis RMD file). 
-covid.NO2.df <- right_join(IHME.regions.df, owid.countries, by = "location")
-covid.NO2.df <- full_join(covid.NO2.df, total.df, by = "location")
 covid.NO2.df$Regions <- as.factor(covid.NO2.df$Regions)
 covid.NO2.df$Super.region <- as.factor(covid.NO2.df$Super.region)
 ```
@@ -405,32 +271,26 @@ covid.NO2.df$Super.region <- as.factor(covid.NO2.df$Super.region)
 #sum all of these products 
 #divide this sum by tot pop for country from df
 
-pop.den.r <- raster("gpw_v4_population_density/pop.density.tif") #Read in GPW v4 population raster data. 
+pop.den.r <- raster("gpw_v4_population_density/pop.density.tif") #Read in GPW v4 population raster data.  
 
 pop.weighting.fxn <- function(x) {
-  pop.cropped <- crop(pop.den.r, extent(x))
-  pop.cropped <- mask(pop.cropped, x)
-  NO2.cropped <- crop(world.NO2.r, extent(x))
-  NO2.cropped <- mask(NO2.cropped, x)
+  pop.cropped <- crop(pop.den.r, extent(wrld_simpl[wrld_simpl$NAME==as.character(x), ]))
+  pop.cropped <- mask(pop.cropped, wrld_simpl[wrld_simpl$NAME==as.character(x), ])
+  NO2.cropped <- crop(world.NO2.r, extent(wrld_simpl[wrld_simpl$NAME==as.character(x), ]))
+  NO2.cropped <- mask(NO2.cropped, wrld_simpl[wrld_simpl$NAME==as.character(x), ])
   overlay.cropped <- overlay(pop.cropped, NO2.cropped, fun=function(x,y){(x*y)} )
   sum <- cellStats(overlay.cropped, stat='sum')
-  mod.covid.df <- filter(covid.NO2.df, location == x$NAME)
+  mod.covid.df <- filter(covid.NO2.df, location == as.character(x))
   weighted.NO2 <- sum / mod.covid.df$population %>% data.frame()
-  df <- x@data
+  df <- wrld_simpl@data[wrld_simpl$NAME==as.character(x), ]
   weighted.NO2.df <- merge(df, weighted.NO2)
   names(weighted.NO2.df)[5] <- "location" 
   names(weighted.NO2.df)[12] <- "Population weighted NO2"
-  weighted.NO2.df <- weighted.NO2.df %>% select(location, `Population weighted NO2`)
+  weighted.NO2.df <- weighted.NO2.df %>% dplyr::select(location, `Population weighted NO2`)
 } #Function to weight NO2 by population for each country. 
-  
-weighted.NO2.df = data.frame()
-for (i in c(Afghanistan.shp, Albania.shp, Algeria.shp, Andorra.shp, Angola.shp, `Antigua and Barbuda.shp`, Argentina.shp, Armenia.shp, Aruba.shp, Australia.shp, Austria.shp, Azerbaijan.shp, Bahamas.shp, Bahrain.shp, Bangladesh.shp, Barbados.shp, Belarus.shp, Belgium.shp, Belize.shp, Benin.shp, Bermuda.shp, Bhutan.shp, Bolivia.shp, `Bosnia and Herzegovina.shp`, Botswana.shp, Brazil.shp, Brunei.shp, Bulgaria.shp, `Burkina Faso.shp`, Burundi.shp, Cambodia.shp, Cameroon.shp, Canada.shp, `Cape Verde.shp`, `Cayman Islands.shp`, `Central African Republic.shp`, Chad.shp, Chile.shp, China.shp, Colombia.shp, Comoros.shp, Congo.shp, `Cook Islands.shp`, `Costa Rica.shp`, `Cote d'Ivoire.shp`, Croatia.shp, Cuba.shp, Cyprus.shp, Czechia.shp, `Democratic Republic of Congo.shp`, Denmark.shp, Djibouti.shp, Dominica.shp, `Dominican Republic.shp`, Ecuador.shp, Egypt.shp, `El Salvador.shp`, `Equatorial Guinea.shp`, Eritrea.shp, Estonia.shp, Ethiopia.shp, `Faeroe Islands.shp`, Fiji.shp, Finland.shp, France.shp, `French Polynesia.shp`, Gabon.shp, Gambia.shp, Georgia.shp, Germany.shp, Ghana.shp, Gibraltar.shp, Greece.shp, Grenada.shp, Guatemala.shp, Guernsey.shp, Guinea.shp, `Guinea-Bissau.shp`, Guyana.shp, Haiti.shp, Honduras.shp, `Hong Kong.shp`, Hungary.shp, Iceland.shp, India.shp, Indonesia.shp, Iran.shp, Iraq.shp, Ireland.shp, `Isle of Man.shp`, Israel.shp, Italy.shp, Jamaica.shp, Japan.shp, Jordan.shp, Kazakhstan.shp, Kenya.shp, Kiribati.shp, Kuwait.shp, Kyrgyzstan.shp, Laos.shp, Latvia.shp, Lebanon.shp, Lesotho.shp, Liberia.shp, Libya.shp, Liechtenstein.shp, Lithuania.shp, Luxembourg.shp, Macao.shp, Madagascar.shp, Malawi.shp, Malaysia.shp, Maldives.shp, Mali.shp, Malta.shp, `Marshall Islands.shp`, Mauritania.shp, Mauritius.shp, Mexico.shp, `Micronesia (country).shp`, Moldova.shp, Monaco.shp, Mongolia.shp, Montenegro.shp, Morocco.shp, Mozambique.shp, Myanmar.shp, Namibia.shp, Nepal.shp, Netherlands.shp, `New Zealand.shp`, Nicaragua.shp, Niger.shp, Nigeria.shp, `North Macedonia.shp`, Norway.shp, Oman.shp, Pakistan.shp, Palestine.shp, Panama.shp, `Papua New Guinea.shp`, Paraguay.shp, Peru.shp, Philippines.shp, Poland.shp, Portugal.shp, Qatar.shp, Romania.shp, Russia.shp, Rwanda.shp, `Saint Kitts and Nevis.shp`, `Saint Lucia.shp`, `Saint Vincent and the Grenadines.shp`, Samoa.shp, `San Marino.shp`, `Sao Tome and Principe.shp`, `Saudi Arabia.shp`, Senegal.shp, Serbia.shp, Seychelles.shp, `Sierra Leone.shp`, Singapore.shp, Slovakia.shp, Slovenia.shp, `Solomon Islands.shp`, Somalia.shp, `South Africa.shp`, `South Korea.shp`, `South Sudan.shp`, Spain.shp, `Sri Lanka.shp`, Sudan.shp, Suriname.shp, Sweden.shp, Switzerland.shp, Syria.shp, Taiwan.shp, Tajikistan.shp, Thailand.shp, Timor.shp, Togo.shp, `Trinidad and Tobago.shp`, Tunisia.shp, Turkey.shp, Uganda.shp, Ukraine.shp, `United Arab Emirates.shp`, `United Kingdom.shp`, `United States.shp`, Uruguay.shp, Uzbekistan.shp, Vanuatu.shp, Vatican.shp, Venezuela.shp, Vietnam.shp, `Wallis and Futuna.shp`, Yemen.shp, Zambia.shp, Zimbabwe.shp)) {
-  country.wNO2.df <- pop.weighting.fxn(i) 
-    # add vector to premade dataframe
-  df <- data.frame(country.wNO2.df)
-  weighted.NO2.df <- rbind(weighted.NO2.df,df)
-} #Apply weighting function to all shapefiles. 
+x <- country.shp.list[country.shp.list!="Antarctica"]
 
+weighted.NO2.df <- purrr::map_dfr(x, pop.weighting.fxn)
 weighted.covid.NO2.df <- full_join(covid.NO2.df, weighted.NO2.df, by = "location") #Join all data frames. 
 ```
 
@@ -446,7 +306,7 @@ arrange(covid.NO2.plot.df, order) #Joined full weighted COVID data set with shap
 map <- ggplot(data = covid.NO2.plot.df, aes(x = long, y = lat, group = group))
 
 map + 
-  geom_polygon(aes(fill = NO2_Concentration), color = 'gray', size = 0.1) +
+  geom_polygon(aes(fill = NO2_Concentration), color = 'black', size = 0.1) +
   my_theme() + 
   ggtitle("World Raw NO2 Concentrations 07-10-2018 to 07-10-2019") +
   scale_fill_gradientn(name = "NO2 Concentration \n(mol/m^2)", colours = myPalette(100))  +
@@ -456,13 +316,25 @@ map +
   #Plot of raw NO2 concentrations. 
 
 map + 
-  geom_polygon(aes(fill = Population.weighted.NO2), color = 'gray', size = 0.1) +
+  geom_polygon(aes(fill = `Population weighted NO2`), color = 'black', size = 0.1) +
   my_theme() + 
   ggtitle("World Weighted NO2 Concentrations 07-10-2018 to 07-10-2019") +
   scale_fill_gradientn(name = "Weighted NO2 \nConcentration", colours = myPalette(100))  +
     north(x.min = -180, y.min = -90, x.max = 180, y.max = 90, anchor = c(x=-140, y=-35), symbol=12) +
     scalebar(covid.NO2.plot.df, dist = 1000, dist_unit = 'km', transform = TRUE, anchor = c(x=-140, y=-60), st.size = 4, model = 'WGS84') +
   coord_equal() #Plot of population weighted NO2. 
+```
+
+####Urban areas only: preparing data. 
+```{r, eval = TRUE}
+world.sf <- st_read("world_maps/country_gen_trim.shp")  # Read shapefile as an sf object
+class(world.sf)
+head(world.sf)
+world.geo <- st_geometry(world.sf)
+urban.shp <- st_read("urban_shapefile/ne_10m_urban_areas_landscan.shp") # Read shapefile as an sf object
+urban.shp <- st_geometry(urban.shp)
+plot(urban.shp)
+str(urban.shp)
 ```
 
 ####Univariate analysis of world NO2 concentrations. 
@@ -666,7 +538,7 @@ covid.NO2.df %>%
 ```{r, eval = TRUE}
 #NO2 concentration vs COVID cases. 
 ggplot(data = covid.NO2.df, aes(x = NO2_Concentration, y = totcases.mil)) +
-  geom_point(color = "#333aff", alpha = 1) +
+  geom_point(color = "#333aff", alpha = 1, size = 1) +
   geom_smooth(color = "red") +
   theme_bw() +
   labs(x = "NO2 Concentration (mol/m^2)", y = "Total COVID-19 Cases per Million People") +
@@ -678,7 +550,7 @@ confint(NO2.lm.cases) #Summary statistics for linear fit.
 
 #NO2 concentration vs COVID deaths. 
 ggplot(data = covid.NO2.df, aes(x = NO2_Concentration, y = totdeaths.mil)) +
-  geom_point(color = "#333aff", alpha = 1) +
+  geom_point(color = "#333aff", alpha = 1, size = 1) +
   geom_smooth(color = "red") +
   theme_bw() +
   labs(x = "NO2 Concentration (mol/m^2)", y = "Total COVID-19 Deaths per Million People") +
@@ -698,7 +570,7 @@ cases.NO2 <- function(x) {
                     filter(!is.na(totdeaths.mil)) %>%
                     filter(!is.na(NO2_Concentration)) %>%
                     ggplot(aes(x = NO2_Concentration, y = totcases.mil)) +
-                        geom_point(color = "#333aff") +
+                        geom_point(color = "#333aff", size = 1) +
                         geom_smooth(color = "red") +
                         geom_smooth(method = "lm", color = "purple") +
                         theme_bw() +
@@ -726,7 +598,7 @@ deaths.NO2 <- function(x) {
                     filter(!is.na(totdeaths.mil)) %>%
                     filter(!is.na(NO2_Concentration)) %>%
                     ggplot(aes(x = NO2_Concentration, y = totdeaths.mil)) +
-                        geom_point(color = "#333aff") +
+                        geom_point(color = "#333aff", size = 1) +
                         geom_smooth(color = "red") +
                         geom_smooth(method = "lm", color = "purple") +
                         theme_bw() +
@@ -750,26 +622,26 @@ for (i in regions.list) {
 ####Bivariate graphs of population weighted NO2 concentrations and COVID-19 outcomes.
 ```{r, eval = TRUE}
 #NO2 concentration vs COVID cases. 
-ggplot(data = weighted.covid.NO2.df, aes(x = Population.weighted.NO2, y = totcases.mil)) +
-  geom_point(color = "#333aff", alpha = 1) +
+ggplot(data = weighted.covid.NO2.df, aes(x = `Population weighted NO2`, y = totcases.mil)) +
+  geom_point(color = "#333aff", alpha = 1, size = 1) +
   geom_smooth(color = "red") +
   theme_bw() +
   labs(x = "Weighted NO2 Concentration (mol/m^2)", y = "Total COVID-19 Cases per Million People") +
   labs(title = "World COVID-19 Cases per Million People vs. Weighted NO2 Concentration") 
-cor(weighted.covid.NO2.df$totcases.mil, weighted.covid.NO2.df$Population.weighted.NO2, use = "complete.obs")
-NO2.lm.cases <- lm(totcases.mil ~ Population.weighted.NO2, data = weighted.covid.NO2.df)
+cor(weighted.covid.NO2.df$totcases.mil, weighted.covid.NO2.df$`Population weighted NO2`, use = "complete.obs")
+NO2.lm.cases <- lm(totcases.mil ~ `Population weighted NO2`, data = weighted.covid.NO2.df)
 summary.lm(NO2.lm.cases)
 confint(NO2.lm.cases) #Summary statistics for linear fit. 
 
 #NO2 concentration vs COVID deaths. 
-ggplot(data = weighted.covid.NO2.df, aes(x = Population.weighted.NO2, y = totdeaths.mil)) +
-  geom_point(color = "#333aff", alpha = 1) +
+ggplot(data = weighted.covid.NO2.df, aes(x = `Population weighted NO2`, y = totdeaths.mil)) +
+  geom_point(color = "#333aff", alpha = 1, size = 1) +
   geom_smooth(color = "red") +
   theme_bw() +
   labs(x = "Weighted NO2 Concentration (mol/m^2)", y = "Total COVID-19 Deaths per Million People") +
   labs(title = "World COVID-19 Deaths per Million People vs. Weighted NO2 Concentration") 
-cor(weighted.covid.NO2.df$totdeaths.mil, weighted.covid.NO2.df$Population.weighted.NO2, use = "complete.obs")
-NO2.lm.deaths <- lm(totdeaths.mil ~ Population.weighted.NO2, data = weighted.covid.NO2.df,)
+cor(weighted.covid.NO2.df$totdeaths.mil, weighted.covid.NO2.df$`Population weighted NO2`, use = "complete.obs")
+NO2.lm.deaths <- lm(totdeaths.mil ~ `Population weighted NO2`, data = weighted.covid.NO2.df,)
 summary.lm(NO2.lm.deaths)
 confint(NO2.lm.deaths) #Summary statistics for linear fit.
 
@@ -781,9 +653,9 @@ cases.NO2.w <- function(x) {
                     weighted.covid.NO2.df %>% 
                     filter(Super.region == x) %>%
                     filter(!is.na(totdeaths.mil)) %>%
-                    filter(!is.na(Population.weighted.NO2)) %>%
-                    ggplot(aes(x = Population.weighted.NO2, y = totcases.mil)) +
-                        geom_point(color = "#333aff") +
+                    filter(!is.na(`Population weighted NO2`)) %>%
+                    ggplot(aes(x = `Population weighted NO2`, y = totcases.mil)) +
+                        geom_point(color = "#333aff", size = 1) +
                         geom_smooth(color = "red") +
                         geom_smooth(method = "lm", color = "purple") +
                         theme_bw() +
@@ -794,8 +666,8 @@ NO2.lm.cases.w <- function(x) {
                         weighted.covid.NO2.df %>%
                         filter(Super.region == x) %>%
                         filter(!is.na(totdeaths.mil)) %>%
-                        filter(!is.na(Population.weighted.NO2)) %>%
-                        lm(totcases.mil ~ Population.weighted.NO2,.) %>%
+                        filter(!is.na(`Population weighted NO2`)) %>%
+                        lm(totcases.mil ~ `Population weighted NO2`,.) %>%
                         summary.lm()  
 } #Function for linear regression statistics to be included in for loop below. 
 
@@ -809,9 +681,9 @@ deaths.NO2.w <- function(x) {
                     weighted.covid.NO2.df %>% 
                     filter(Super.region == x) %>% 
                     filter(!is.na(totdeaths.mil)) %>%
-                    filter(!is.na(Population.weighted.NO2)) %>%
-                    ggplot(aes(x = Population.weighted.NO2, y = totdeaths.mil)) +
-                        geom_point(color = "#333aff") +
+                    filter(!is.na(`Population weighted NO2`)) %>%
+                    ggplot(aes(x = `Population weighted NO2`, y = totdeaths.mil)) +
+                        geom_point(color = "#333aff", size = 1) +
                         geom_smooth(color = "red") +
                         geom_smooth(method = "lm", color = "purple") +
                         theme_bw() +
@@ -822,8 +694,8 @@ NO2.lm.deaths.w <- function(x) {
                         weighted.covid.NO2.df %>%
                         filter(Super.region == x) %>%
                         filter(!is.na(totdeaths.mil)) %>%
-                        filter(!is.na(Population.weighted.NO2)) %>%
-                        lm(totdeaths.mil ~ Population.weighted.NO2,.) %>%
+                        filter(!is.na(`Population weighted NO2`)) %>%
+                        lm(totdeaths.mil ~ `Population weighted NO2`,.) %>%
                         summary.lm() #Function for linear regression statistics to be included in for loop below. 
 }
 for (i in regions.list) {
@@ -1086,6 +958,188 @@ plot(July_Oct2018.sat.r)
 plot(us.shp, add = TRUE)
 ```
 
+####World Air Quality Data City Analysis: data preparation. 
+```{r, eval = TRUE}
+#Unsuccessful: cannot find shapefiles for the selected cities without ArcGIS access.
+#Read in world AQI data for 6 cities. Dates range 12/30/19 to 4/5/20. 
+waqi.main <- read.csv(file = 'waqi_NO2.csv', header = TRUE) 
+seattle.df <- filter(waqi.main, City == "Seattle") 
+  seattle.df$Date <- as.Date(seattle.df$Date, format = "%m/%d/%y")
+  seattle.df <- arrange(seattle.df, Date)
+wuhan.df <- filter(waqi.main, City == "Wuhan")
+  wuhan.df$Date <- as.Date(wuhan.df$Date, format = "%m/%d/%y")
+  wuhan.df <- arrange(wuhan.df, Date)
+milan.df <- filter(waqi.main, City == "Milan")
+  milan.df$Date <- as.Date(milan.df$Date, format = "%m/%d/%y")
+  milan.df <- arrange(milan.df, Date)
+london.df <- filter(waqi.main, City == "London")
+  london.df$Date <- as.Date(london.df$Date, format = "%m/%d/%y")
+  london.df <- arrange(london.df, Date)
+saopaulo.df <- filter(waqi.main, City == "Sao Paulo") 
+  saopaulo.df$Date <- as.Date(saopaulo.df$Date, format = "%m/%d/%y")
+  saopaulo.df <- arrange(saopaulo.df, Date)
+johannesburg.df <- filter(waqi.main, City == "Johannesburg") 
+  johannesburg.df$Date <- as.Date(johannesburg.df$Date, format = "%m/%d/%y")
+  johannesburg.df <- arrange(johannesburg.df, Date)
+
+dates.2020.Q1 <- seq(as.Date("2019-12-30"), as.Date("2020-04-05"), by=7) #List of dates starting Dec 30th 2019. 
+#Averaging NO2 data by the week. 
+#Seattle
+seattle.ground.fxn <- function(x) {
+  date.filter <- subset(seattle.df, Date >= dates.2020.Q1[[x]] & Date < dates.2020.Q1[[x]] + 6)
+  mean <- mean(date.filter$median)
+  seattle.avg.df <- data.frame(mean)
+  names(seattle.avg.df)[1] <- "Mean_NO2_Concentration"
+  Week_start_date <- as.Date(dates.2020.Q1[[x]])
+  Type <- rep("satellite", length.out = nrow(seattle.avg.df)) 
+  seattle.ground.weekly <- cbind(Week_start_date, Type, seattle.avg.df) 
+  seattle.ground.weekly <- seattle.ground.weekly %>% dplyr::select(Type, Week_start_date, Mean_NO2_Concentration)
+}
+x <- seq_along(dates.2020.Q1)
+seattle.ground.weekly.df <- purrr::map_dfr(x, seattle.ground.fxn) 
+
+#Wuhan
+wuhan.ground.NO2.fxn <- function(x) {
+  date.filter <- subset(wuhan.df, Date >= dates.2020.Q1[[x]] & Date < dates.2020.Q1[[x]] + 6)
+  mean <- mean(date.filter$median)
+  date.start <- as.Date(dates.2020.Q1[[x]])
+  wuhan.avg.df <- data.frame(date.start, wuhan.df[1,3], mean)
+  names(wuhan.avg.df)[1] <- "Week_start_date"
+  names(wuhan.avg.df)[2] <- "City"
+  names(wuhan.avg.df)[3] <- "Mean_of_Median_NO2"
+  output <- wuhan.avg.df 
+  return(output)
+}
+wuhan.ground.df <- purrr::map_dfr(x, wuhan.ground.NO2.fxn) 
+
+#Milan
+milan.ground.NO2.fxn <- function(x) {
+  date.filter <- subset(milan.df, Date >= dates.2020.Q1[[x]] & Date < dates.2020.Q1[[x]] + 6)
+  mean <- mean(date.filter$median)
+  date.start <- as.Date(dates.2020.Q1[[x]])
+  milan.avg.df <- data.frame(date.start, milan.df[1,3], mean)
+  names(milan.avg.df)[1] <- "Week_start_date"
+  names(milan.avg.df)[2] <- "City"
+  names(milan.avg.df)[3] <- "Mean_of_Median_NO2"
+  output <- milan.avg.df 
+  return(output)
+}
+milan.ground.df <- purrr::map_dfr(x, milan.ground.NO2.fxn) 
+
+#London
+london.ground.fxn <- function(x) {
+  date.filter <- subset(london.df, Date >= dates.2020.Q1[[x]] & Date < dates.2020.Q1[[x]] + 6)
+  mean <- mean(date.filter$median)
+  london.avg.df <- data.frame(mean)
+  names(london.avg.df)[1] <- "Mean_NO2_Concentration"
+  Week_start_date <- as.Date(dates.2020.Q1[[x]])
+  Type <- rep("satellite", length.out = nrow(london.avg.df)) 
+  london.ground.weekly <- cbind(Week_start_date, Type, london.avg.df) 
+  london.ground.weekly <- london.ground.weekly %>% dplyr::select(Type, Week_start_date, Mean_NO2_Concentration)
+}
+x <- seq_along(dates.2020.Q1)
+london.ground.weekly <- purrr::map_dfr(x, london.ground.fxn)
+
+#Sao Paulo
+saopaulo.ground.NO2.fxn <- function(x) {
+  date.filter <- subset(saopaulo.df, Date >= dates.2020.Q1[[x]] & Date < dates.2020.Q1[[x]] + 6)
+  mean <- mean(date.filter$median)
+  date.start <- as.Date(dates.2020.Q1[[x]])
+  saopaulo.avg.df <- data.frame(date.start, saopaulo.df[1,3], mean)
+  names(saopaulo.avg.df)[1] <- "Week_start_date"
+  names(saopaulo.avg.df)[2] <- "City"
+  names(saopaulo.avg.df)[3] <- "Mean_of_Median_NO2"
+  output <- saopaulo.avg.df 
+  return(output)
+}
+saopaulo.ground.df <- purrr::map_dfr(x, saopaulo.ground.NO2.fxn) 
+
+#Jonannesburg
+jonannesburg.ground.NO2.fxn <- function(x) {
+  date.filter <- subset(johannesburg.df, Date >= dates.2020.Q1[[x]] & Date < dates.2020.Q1[[x]] + 6)
+  mean <- mean(date.filter$median)
+  date.start <- as.Date(dates.2020.Q1[[x]])
+  johannesburg.avg.df <- data.frame(date.start, johannesburg.df[1,3], mean)
+  names(johannesburg.avg.df)[1] <- "Week_start_date"
+  names(johannesburg.avg.df)[2] <- "City"
+  names(johannesburg.avg.df)[3] <- "Mean_of_Median_NO2"
+  output <- johannesburg.avg.df 
+  return(output)
+}
+jonannesburg.ground.df <- purrr::map_dfr(x, jonannesburg.ground.NO2.fxn) 
+
+#Retrieving satellite data:
+#Used code:
+#gsutil -m cp \
+# >   "file names" \
+# >   COVID-19_NO2/six_cities_ground_NO2
+
+# in terminal to copy all files from google cloud storage into folders in working directory.
+
+#Plan:
+#get shapefiles for each city
+#use shapefiles to filter satellite data for each city and make data frame equivalent to ground data per week
+#make graphs for each comparing the two data sets
+
+#Creates list of raster files from folder to call in function. 
+seattle.rastlist <- list.files(path = "six_cities_ground_NO2/seattle", pattern='.tif$', 
+all.files=TRUE, full.names=FALSE)
+
+#Function to make data frame for weekly average NO2 concentration. 
+seattle.sat.fxn <- function(x, y) {
+  r <- raster(paste0("six_cities_ground_NO2/seattle/", x))  %>% flip(direction='y')  
+  r.vals <- raster::extract(r, `seattle.shp`)
+  r.mean <- lapply(r.vals, FUN=mean, na.rm = TRUE)
+  final.df <- data.frame(`seattle.shp`@data, r.mean)  
+  Week_start_date <- as.Date(dates.2020.Q1[[y]])
+  Type <- rep(satellite, length.out = nrow(final.df)) 
+  seattle.sat.weekly <- cbind(final.df, Date, Week, Type) 
+  seattle.sat.weekly <- seattle.sat.weekly %>% dplyr::mutate(Date = as.factor(strftime(as.Date(Date, format="%Y-%m-%d"), format="%m-%d")))
+  names(seattle.sat.weekly)[11] <- "Mean_NO2_Concentration"
+  seattle.sat.weekly <- seattle.sat.weekly %>% select(Type, Date, Mean_NO2_Concentration)
+}
+
+x <- seattle.rastlist
+y <- 1:length(dates.2020.Q1)
+seattle.sat.weekly.df <- purrr::map2_dfr(x, y, seattle.sat.fxn) 
+seattle.weekly.df <- rbind(seattle.sat.weekly.df, seattle.ground.weekly.df) 
+
+
+london.rastlist <- list.files(path = "six_cities_ground_NO2/london", pattern='.tif$', 
+all.files=TRUE, full.names=FALSE)
+
+london.sat.fxn <- function(x, y) {
+  r <- raster(paste0("six_cities_ground_NO2/london/", x))  %>% flip(direction='y')  
+  r.vals <- raster::extract(r, `london.shp`)
+  r.mean <- lapply(r.vals, FUN=mean, na.rm = TRUE)
+  final.df <- data.frame(r.mean)  
+  Week_start_date <- as.Date(dates.2020.Q1[[y]])
+  Type <- rep("satellite", length.out = nrow(final.df)) 
+  london.sat.weekly <- cbind(final.df, Week_start_date, Type) 
+  names(london.sat.weekly)[1] <- "Mean_NO2_Concentration"
+  london.sat.weekly <- london.sat.weekly %>% dplyr::select(Type, Week_start_date, Mean_NO2_Concentration)
+}
+
+x <- london.rastlist
+y <- 1:length(dates.2020.Q1)
+london.sat.weekly <- purrr::map2_dfr(x, y, london.sat.fxn) 
+london.weekly.df <- rbind(london.sat.weekly,london.ground.weekly.df) 
+```
+
+####Reading in shapefiles for six cities analysis. 
+```{r, eval = TRUE}
+#Unsuccessful without ArcGIS access.
+london.shp <- st_read("six_cities_shapefiles/london/ESRI/London_Borough_Excluding_MHW.shp")  # Read shapefile as an sf object
+class(london.shp)
+london.shp <- st_geometry(london.shp)
+plot(london.shp)
+
+seattle.shp <- st_read("six_cities_shapefiles/seattle/WA.shp")  # Read shapefile as an sf object
+class(seattle.shp)
+seattle.shp <- st_geometry(seattle.shp)
+plot(seattle.shp)
+```
+
 ###Time-analysis: NO2 changes during the COVID-19 pandemic.
 ####US time analysis: interrupted series time analysis data preparation. 
 ```{r, eval = TRUE}
@@ -1109,7 +1163,7 @@ dates.2019 <- seq(as.Date("2018-12-31"), as.Date("2019-12-29"), by=7) #List of d
 
 #Function to make data frame for weekly average NO2 concentration. 
 read.fxn <- function(x, y) {
-  r <- raster(paste0("US_time_analysis_2019/", x))
+  r <- raster(paste0("US_time_analysis_2019/", x)) %>% flip(direction='y')  
   r.vals <- raster::extract(r, `United States.shp`)
   r.mean <- lapply(r.vals, FUN=mean, na.rm = TRUE)
   final.df <- data.frame(`United States.shp`@data, r.mean)  
@@ -1138,7 +1192,7 @@ dates.2020 <- seq(as.Date("2019-12-30"), as.Date("2021-01-03"), by=7) #List of d
 
 #Function to make data frame for weekly average NO2 concentration. 
 read.fxn <- function(x, y) {
-  r <- raster(paste0("US_time_analysis_2020/", x))
+  r <- raster(paste0("US_time_analysis_2020/", x)) %>% flip(direction='y')  
   r.vals <- raster::extract(r, `United States.shp`)
   r.mean <- lapply(r.vals, FUN=mean, na.rm = TRUE)
   final.df <- data.frame(`United States.shp`@data, r.mean)   
@@ -1218,7 +1272,7 @@ dates.2019 <- seq(as.Date("2018-11-05"), as.Date("2019-11-10"), by=7) #List of d
 
 #Function to make data frame for weekly average NO2 concentration. 
 read.fxn <- function(x, y) {
-  r <- raster(paste0("China_time_analysis_2019/", x))
+  r <- raster(paste0("China_time_analysis_2019/", x)) %>% flip(direction='y')  
   r.vals <- raster::extract(r, `China.shp`)
   r.mean <- lapply(r.vals, FUN=mean, na.rm = TRUE)
   final.df <- data.frame(`China.shp`@data, r.mean)  
@@ -1246,7 +1300,7 @@ dates.2020 <- seq(as.Date("2019-11-04"), as.Date("2020-11-08"), by=7) #List of d
 
 #Function to make data frame for weekly average NO2 concentration. 
 read.fxn <- function(x, y) {
-  r <- raster(paste0("China_time_analysis_2020/", x))
+  r <- raster(paste0("China_time_analysis_2020/", x)) %>% flip(direction='y')  
   r.vals <- raster::extract(r, `China.shp`)
   r.mean <- lapply(r.vals, FUN=mean, na.rm = TRUE)
   final.df <- data.frame(`China.shp`@data, r.mean)   
@@ -1332,8 +1386,8 @@ read.fxn <- function(x1, x2, y) {
   names(x)[1:2] <- c('x', 'y')
   x$fun <- mean
   x$na.rm <- TRUE
-  world.NO2.r <- do.call(mosaic, x) #Combines left and right halves of world raster. 
-  r.vals <- raster::extract(world.NO2.r, wrld_simpl)
+  world.NO2.r <- do.call(mosaic, x) %>% flip(direction='y')   #Combines left and right halves of world raster. 
+  r.vals <- raster::extract(world.NO2.r, wrld_simpl) 
   r.mean <- lapply(r.vals, FUN=mean, na.rm = TRUE)
   final.df <- data.frame(wrld_simpl@data, r.mean)  
   Date <- as.Date(dates.2019[[y]])
@@ -1372,7 +1426,7 @@ read.fxn <- function(x1, x2, y) {
   names(x)[1:2] <- c('x', 'y')
   x$fun <- mean
   x$na.rm <- TRUE
-  world.NO2.r <- do.call(mosaic, x) #Combines left and right halves of world raster. 
+  world.NO2.r <- do.call(mosaic, x) %>% flip(direction='y')  #Combines left and right halves of world raster. 
   r.vals <- raster::extract(r, wlrd_simpl)
   r.mean <- lapply(r.vals, FUN=mean, na.rm = TRUE)
   final.df <- data.frame(wrld_simpl@data, r.mean)   

@@ -185,7 +185,30 @@ China.date.fxn <- function(date.start, date.end) {
 } 
 
 #Applying function:
-US.date.fxn("2018-07-01", "2018-10-01") #Used for ground data to satellite comparison. 
+#Used for USA ground data to satellite comparison. 
+US.date.fxn("2018-07-01", "2018-10-01") 
+
+#Comparing satellite data with 6 selected cities:
+dates.2020 <- seq(as.Date("2019-12-30"), as.Date("2020-04-05"), by=7) #List of dates starting Dec 30th 2019. 
+for (i in 1:length(dates.2020)) {
+  countries.NO2.fxn(as.character(as.Date(dates.2020[[i]])), as.character(as.Date(dates.2020[[i]]) + 6), -125, 45, -120, 49, "Seattle")
+}  
+for (i in 1:length(dates.2020)) {
+  countries.NO2.fxn(as.character(as.Date(dates.2020[[i]])), as.character(as.Date(dates.2020[[i]]) + 6), 113, 30, 116, 31, "Wuhan")
+} 
+for (i in 1:length(dates.2020)) {
+  countries.NO2.fxn(as.character(as.Date(dates.2020[[i]])), as.character(as.Date(dates.2020[[i]]) + 6), 8, 44.5, 10.5, 36, "Milan")
+} 
+for (i in 1:length(dates.2020)) {
+  countries.NO2.fxn(as.character(as.Date(dates.2020[[i]])), as.character(as.Date(dates.2020[[i]]) + 6), -1, 51, 1, 52, "London")
+} 
+for (i in 1:length(dates.2020)) {
+  countries.NO2.fxn(as.character(as.Date(dates.2020[[i]])), as.character(as.Date(dates.2020[[i]]) + 6), -47, -24, -45.5,-23, "SaoPaulo")
+} 
+for (i in 1:length(dates.2020)) {
+  countries.NO2.fxn(as.character(as.Date(dates.2020[[i]])), as.character(as.Date(dates.2020[[i]]) + 6), 27, -30, 29, -25, "Johannesburg")
+} 
+
 
 #Time analysis: Go by first day of first lockdown order -> two months later. Then find time period of equivalent two-month length, starting before the lockdown. Apply this first to 2019, then 2020, then 2021. 
 
