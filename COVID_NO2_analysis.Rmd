@@ -1,5 +1,5 @@
 ---
-title: "NO2 and COVID-19"
+title: "NO2 and COVID-19 Exploratory Analysis"
 author: "Alana Schreibman"
 date: "5/27/2021"
 output: 
@@ -18,12 +18,11 @@ knitr::opts_chunk$set(warning = FALSE, message = FALSE)
 ```
 
 ***
-The purpose of this file is to practice applying basic R commands learned through lecture videos and perform exploratory analysis on worldwide COVID-19 data. 
 
 ```{r, eval = TRUE}
 #Load libraries needed. 
 library(easypackages)
-libraries("rgdal", "gdalUtils", "raster", "maptools", "tigris", "ggplot2", "cowplot", "dplyr", "sp", "sf", "rgdal", "stringr", "RColorBrewer", "ggcorrplot", "pander", "forcats", "ggsn", "mapproj", "rlist", "lubridate")
+libraries("rgdal", "gdalUtils", "raster", "maptools", "tigris", "ggplot2", "cowplot", "dplyr", "sp", "sf", "rgdal", "stringr", "RColorBrewer", "ggcorrplot", "pander", "forcats", "ggsn", "mapproj", "rlist", "lubridate", "ggpubr")
 ```
 
 ### Merging NO2 data with COVID data for analysis.  
@@ -34,12 +33,22 @@ data(wrld_simpl)
 wrld_simpl@data[["NAME"]]
 plot(wrld_simpl) 
 
+#Reading in urban areas shapefile. 
+world.sf <- st_read("urban_shapefile/ne_10m_urban_areas_landscan.shp")  # Read shapefile as an sf object
+class(world.sf)
+head(world.sf)
+world.geo <- st_geometry(world.sf)
+
 #Filtering COVID data (from COVID exploratory analysis.)
 owid <- read.csv(url("https://raw.githubusercontent.com/owid/covid-19-data/master/public/data/owid-covid-data.csv"), na.strings = c("", "NA"), colClasses = c("date" = "Date"), header = TRUE)
 owid.filtered <- owid %>%
                   rename(iso.code = iso_code, totcases = total_cases, totdeaths = total_deaths, totcases.mil = total_cases_per_million, totdeaths.mil = total_deaths_per_million, pop.density = population_density, med.age = median_age, older70 = aged_70_older, gdp.cap = gdp_per_capita, card.death = cardiovasc_death_rate, diab.prev = diabetes_prevalence, fem.smokers = female_smokers, male.smokers = male_smokers) %>%
                   select(c(iso.code:totcases, totdeaths, totcases.mil, totdeaths.mil, population, pop.density, med.age, older70, gdp.cap, card.death, diab.prev, fem.smokers, male.smokers)) %>% #Renamed variables and filtered to keep only those of interest. 
                   filter(date == "2021-06-28") #Filtered out all but most recent date (most recent date is a running sum of total cases).
+table(owid.filtered$continent, useNA = "ifany") #Data includes both continent and country-specific outcomes. Continent outcomes can be distinguished by "NA" in the continent column; the continent name is in the location column. 
+cfr.df <- data.frame("case.fatality.rate"= owid.filtered$totdeaths / owid.filtered$totcases, "location" = owid.filtered$location)
+owid.filtered <- merge(owid.filtered, cfr.df, by = "location")
+  rm(cfr.df)
 owid.countries <- owid.filtered %>%
                     filter(!is.na(continent)) #Removed all rows with NA for continent, leaving behind only countries. 
 ```
@@ -55,7 +64,6 @@ x <- list(left, right)
 names(x)[1:2] <- c('x', 'y')
 x$fun <- mean
 x$na.rm <- TRUE
-
 world.NO2.r <- do.call(mosaic, x)
 rm(left, right, x)
 
@@ -176,8 +184,8 @@ pop.weighting.fxn <- function(x) {
   df <- wrld_simpl@data[wrld_simpl$NAME==as.character(x), ]
   weighted.NO2.df <- merge(df, weighted.NO2)
   names(weighted.NO2.df)[5] <- "location" 
-  names(weighted.NO2.df)[12] <- "Population weighted NO2"
-  weighted.NO2.df <- weighted.NO2.df %>% dplyr::select(location, `Population weighted NO2`)
+  names(weighted.NO2.df)[12] <- "pop.weighted.NO2"
+  weighted.NO2.df <- weighted.NO2.df %>% dplyr::select(location, pop.weighted.NO2)
 } #Function to weight NO2 by population for each country. 
 x <- country.shp.list[country.shp.list!="Antarctica"]
 
@@ -207,13 +215,21 @@ map +
   #Plot of raw NO2 concentrations. 
 
 map + 
-  geom_polygon(aes(fill = `Population weighted NO2`), color = 'black', size = 0.1) +
+  geom_polygon(aes(fill = pop.weighted.NO2), color = 'black', size = 0.1) +
   my_theme() + 
   ggtitle("World Weighted NO2 Concentrations 07-10-2018 to 07-10-2019") +
   scale_fill_gradientn(name = "Weighted NO2 \nConcentration", colours = myPalette(100))  +
     north(x.min = -180, y.min = -90, x.max = 180, y.max = 90, anchor = c(x=-140, y=-35), symbol=12) +
     scalebar(covid.NO2.plot.df, dist = 1000, dist_unit = 'km', transform = TRUE, anchor = c(x=-140, y=-60), st.size = 4, model = 'WGS84') +
   coord_equal() #Plot of population weighted NO2. 
+```
+
+####Grouping data by median. 
+```{r, eval = TRUE}
+high.covid <- filter(weighted.covid.NO2.df, totcases.mil >= median(weighted.covid.NO2.df$totcases.mil, na.rm = T))
+low.covid <- filter(weighted.covid.NO2.df, totcases.mil < median(weighted.covid.NO2.df$totcases.mil, na.rm = T))
+high.NO2 <- filter(weighted.covid.NO2.df, pop.weighted.NO2 >= median(weighted.covid.NO2.df$pop.weighted.NO2, na.rm = T))
+low.NO2 <- filter(weighted.covid.NO2.df, pop.weighted.NO2 < median(weighted.covid.NO2.df$pop.weighted.NO2, na.rm = T))
 ```
 
 ### Exploratory Analysis of NO2 and COVID-19 variables. 
@@ -265,7 +281,7 @@ max(covid.NO2.df$totcases.mil, na.rm = TRUE)
 covid.NO2.df %>%
     ggplot(aes(totcases.mil)) +
     geom_histogram(color = "black",fill = "grey") +
-    geom_vline(xintercept = mean(covid.NO2.df$totcases.mil), lwd = 2) +
+    geom_vline(xintercept = mean(covid.NO2.df$totcases.mil, na.rm = T), lwd = 2) +
     labs(title = "Distribution of World COVID-19 Cases per Million",
          x = "Total COVID-19 Cases per Million",
          y = "Number of Countries") +
@@ -393,16 +409,16 @@ covid.NO2.df %>%
     scale_y_continuous(breaks = seq(0,5820.087,500))
 ```
 
-#### Bivariate analysis of NO2 concentrations and all continuous variables
+#### Bivariate analysis of NO2 concentrations and all continuous variables.
 ```{r, eval = TRUE}
 covid.NO2.df %>%
-    select(NO2_Concentration, totcases.mil, totdeaths.mil, pop.density, med.age, card.death, diab.prev, fem.smokers, male.smokers) %>% 
+    select(NO2_Concentration, totcases.mil, totdeaths.mil, case.fatality.rate, pop.density, med.age, card.death, diab.prev, fem.smokers, male.smokers) %>% 
     cor(use="pairwise.complete.obs") %>% 
     pander
 
 #Visual representation of correlations.
 covid.NO2.df %>%
-    select(NO2_Concentration, totcases.mil, totdeaths.mil, pop.density, med.age, card.death, diab.prev, fem.smokers, male.smokers)  %>%
+    select(NO2_Concentration, totcases.mil, totdeaths.mil, case.fatality.rate, pop.density, med.age, card.death, diab.prev, fem.smokers, male.smokers)  %>%
     cor(use="pairwise.complete.obs") %>%
     ggcorrplot(type = "lower", ggtheme = theme_minimal, colors = c("#6D9EC1","white","#E46726"),
                show.diag = T,
@@ -420,6 +436,7 @@ covid.NO2.df %>%
 ggplot(data = covid.NO2.df, aes(x = NO2_Concentration, y = totcases.mil)) +
   geom_point(color = "#333aff", alpha = 1, size = 1) +
   geom_smooth(color = "red") +
+  geom_smooth(method = "lm", color = "purple") +
   theme_bw() +
   labs(x = "NO2 Concentration (mol/m^2)", y = "Total COVID-19 Cases per Million People") +
   labs(title = "World COVID-19 Cases per Million People vs. NO2 Concentration") 
@@ -432,6 +449,7 @@ confint(NO2.lm.cases) #Summary statistics for linear fit.
 ggplot(data = covid.NO2.df, aes(x = NO2_Concentration, y = totdeaths.mil)) +
   geom_point(color = "#333aff", alpha = 1, size = 1) +
   geom_smooth(color = "red") +
+  geom_smooth(method = "lm", color = "purple") +
   theme_bw() +
   labs(x = "NO2 Concentration (mol/m^2)", y = "Total COVID-19 Deaths per Million People") +
   labs(title = "World COVID-19 Deaths per Million People vs. NO2 Concentration") 
@@ -502,26 +520,28 @@ for (i in regions.list) {
 #### Bivariate graphs of population weighted NO2 concentrations and COVID-19 outcomes.
 ```{r, eval = TRUE}
 #NO2 concentration vs COVID cases. 
-ggplot(data = weighted.covid.NO2.df, aes(x = `Population weighted NO2`, y = totcases.mil)) +
+ggplot(data = weighted.covid.NO2.df, aes(x = pop.weighted.NO2, y = totcases.mil)) +
   geom_point(color = "#333aff", alpha = 1, size = 1) +
   geom_smooth(color = "red") +
+  geom_smooth(method = "lm", color = "purple") +
   theme_bw() +
   labs(x = "Weighted NO2 Concentration (mol/m^2)", y = "Total COVID-19 Cases per Million People") +
   labs(title = "World COVID-19 Cases per Million People vs. Weighted NO2 Concentration") 
-cor(weighted.covid.NO2.df$totcases.mil, weighted.covid.NO2.df$`Population weighted NO2`, use = "complete.obs")
-NO2.lm.cases <- lm(totcases.mil ~ `Population weighted NO2`, data = weighted.covid.NO2.df)
+cor(weighted.covid.NO2.df$totcases.mil, weighted.covid.NO2.df$pop.weighted.NO2, use = "complete.obs")
+NO2.lm.cases <- lm(totcases.mil ~ pop.weighted.NO2, data = weighted.covid.NO2.df)
 summary.lm(NO2.lm.cases)
 confint(NO2.lm.cases) #Summary statistics for linear fit. 
 
 #NO2 concentration vs COVID deaths. 
-ggplot(data = weighted.covid.NO2.df, aes(x = `Population weighted NO2`, y = totdeaths.mil)) +
+ggplot(data = weighted.covid.NO2.df, aes(x = pop.weighted.NO2, y = totdeaths.mil)) +
   geom_point(color = "#333aff", alpha = 1, size = 1) +
   geom_smooth(color = "red") +
+  geom_smooth(method = "lm", color = "purple") +
   theme_bw() +
   labs(x = "Weighted NO2 Concentration (mol/m^2)", y = "Total COVID-19 Deaths per Million People") +
   labs(title = "World COVID-19 Deaths per Million People vs. Weighted NO2 Concentration") 
-cor(weighted.covid.NO2.df$totdeaths.mil, weighted.covid.NO2.df$`Population weighted NO2`, use = "complete.obs")
-NO2.lm.deaths <- lm(totdeaths.mil ~ `Population weighted NO2`, data = weighted.covid.NO2.df,)
+cor(weighted.covid.NO2.df$totdeaths.mil, weighted.covid.NO2.df$pop.weighted.NO2, use = "complete.obs")
+NO2.lm.deaths <- lm(totdeaths.mil ~ pop.weighted.NO2, data = weighted.covid.NO2.df,)
 summary.lm(NO2.lm.deaths)
 confint(NO2.lm.deaths) #Summary statistics for linear fit.
 
@@ -533,8 +553,8 @@ cases.NO2.w <- function(x) {
                     weighted.covid.NO2.df %>% 
                     filter(Super.region == x) %>%
                     filter(!is.na(totdeaths.mil)) %>%
-                    filter(!is.na(`Population weighted NO2`)) %>%
-                    ggplot(aes(x = `Population weighted NO2`, y = totcases.mil)) +
+                    filter(!is.na(pop.weighted.NO2)) %>%
+                    ggplot(aes(x = pop.weighted.NO2, y = totcases.mil)) +
                         geom_point(color = "#333aff", size = 1) +
                         geom_smooth(color = "red") +
                         geom_smooth(method = "lm", color = "purple") +
@@ -546,8 +566,8 @@ NO2.lm.cases.w <- function(x) {
                         weighted.covid.NO2.df %>%
                         filter(Super.region == x) %>%
                         filter(!is.na(totdeaths.mil)) %>%
-                        filter(!is.na(`Population weighted NO2`)) %>%
-                        lm(totcases.mil ~ `Population weighted NO2`,.) %>%
+                        filter(!is.na(pop.weighted.NO2)) %>%
+                        lm(totcases.mil ~ pop.weighted.NO2,.) %>%
                         summary.lm()  
 } #Function for linear regression statistics to be included in for loop below. 
 
@@ -561,8 +581,8 @@ deaths.NO2.w <- function(x) {
                     weighted.covid.NO2.df %>% 
                     filter(Super.region == x) %>% 
                     filter(!is.na(totdeaths.mil)) %>%
-                    filter(!is.na(`Population weighted NO2`)) %>%
-                    ggplot(aes(x = `Population weighted NO2`, y = totdeaths.mil)) +
+                    filter(!is.na(pop.weighted.NO2)) %>%
+                    ggplot(aes(x = pop.weighted.NO2, y = totdeaths.mil)) +
                         geom_point(color = "#333aff", size = 1) +
                         geom_smooth(color = "red") +
                         geom_smooth(method = "lm", color = "purple") +
@@ -574,8 +594,8 @@ NO2.lm.deaths.w <- function(x) {
                         weighted.covid.NO2.df %>%
                         filter(Super.region == x) %>%
                         filter(!is.na(totdeaths.mil)) %>%
-                        filter(!is.na(`Population weighted NO2`)) %>%
-                        lm(totdeaths.mil ~ `Population weighted NO2`,.) %>%
+                        filter(!is.na(pop.weighted.NO2)) %>%
+                        lm(totdeaths.mil ~ pop.weighted.NO2,.) %>%
                         summary.lm() #Function for linear regression statistics to be included in for loop below. 
 }
 for (i in regions.list) {
@@ -590,6 +610,7 @@ for (i in regions.list) {
 ggplot(data = covid.NO2.df, aes(x = NO2_Concentration, y = pop.density)) +
   geom_point(color = "#333aff", alpha = 1) +
   geom_smooth(color = "red") +
+  geom_smooth(method = "lm", color = "purple") +
   theme_bw() +
   labs(x = "NO2 Concentration (mol/m^2)", y = "Population Density") +
   labs(title = "World Population Density vs. NO2 Concentration") 
@@ -602,6 +623,7 @@ confint(NO2.lm.pop) #Summary statistics for linear fit.
 ggplot(data = covid.NO2.df, aes(x = NO2_Concentration, y = med.age)) +
   geom_point(color = "#333aff", alpha = 1) +
   geom_smooth(color = "red") +
+  geom_smooth(method = "lm", color = "purple") +
   theme_bw() +
   labs(x = "NO2 Concentration (mol/m^2)", y = "Median Age") +
   labs(title = "World Median Age by Country vs. NO2 Concentration") 
@@ -614,6 +636,7 @@ confint(NO2.lm.age) #Summary statistics for linear fit.
 ggplot(data = covid.NO2.df, aes(x = NO2_Concentration, y = gdp.cap)) +
   geom_point(color = "#333aff", alpha = 1) +
   geom_smooth(color = "red") +
+  geom_smooth(method = "lm", color = "purple") +
   theme_bw() +
   labs(x = "NO2 Concentration (mol/m^2)", y = "GDP per Capita") +
   labs(title = "World GDP per Capita vs. NO2 Concentration") 
@@ -626,6 +649,7 @@ confint(NO2.lm.gdp) #Summary statistics for linear fit.
 ggplot(data = covid.NO2.df, aes(x = NO2_Concentration, y = card.death)) +
   geom_point(color = "#333aff", alpha = 1) +
   geom_smooth(color = "red") +
+  geom_smooth(method = "lm", color = "purple") +
   theme_bw() +
   labs(x = "NO2 Concentration (mol/m^2)", y = "Cardiovascular Death Rates") +
   labs(title = "World Cardiovascular Death Rates vs. NO2 Concentration") 
@@ -638,6 +662,7 @@ confint(NO2.lm.card.death) #Summary statistics for linear fit.
 ggplot(data = covid.NO2.df, aes(x = NO2_Concentration, y = diab.prev)) +
   geom_point(color = "#333aff", alpha = 1) +
   geom_smooth(color = "red") +
+  geom_smooth(method = "lm", color = "purple") +
   theme_bw() +
   labs(x = "NO2 Concentration (mol/m^2)", y = "Diabetes Prevalence Rates") +
   labs(title = "World Diabetes Prevalence Rates vs. NO2 Concentration") 
@@ -653,6 +678,7 @@ confint(NO2.lm.diab) #Summary statistics for linear fit.
 ggplot(data = covid.NO2.df, aes(x = NO2_Concentration, y = totcases.mil)) +
   geom_point(color = "#333aff", alpha = 1) +
   geom_smooth(color = "red") +
+  geom_smooth(method = "lm", color = "purple") +
   theme_bw() +
   labs(x = "NO2 Concentration (mol/m^2)", y = "Total COVID-19 Cases per Million People") +
   labs(title = "World COVID-19 Cases per Million People vs. NO2 Concentration") 
@@ -665,6 +691,7 @@ confint(NO2.lm.cases) #Summary statistics for linear fit.
 ggplot(data = covid.NO2.df, aes(x = NO2_Concentration, y = totdeaths.mil)) +
   geom_point(color = "#333aff", alpha = 1) +
   geom_smooth(color = "red") +
+  geom_smooth(method = "lm", color = "purple") +
   theme_bw() +
   labs(x = "NO2 Concentration (mol/m^2)", y = "Total COVID-19 Deaths per Million People") +
   labs(title = "World COVID-19 Deaths per Million People vs. NO2 Concentration") 
@@ -720,6 +747,271 @@ for (i in regions.list) {
 } #Loops function for continents of interest.
 ```
 
+#### Multivariate graphs of COVID outcomes vs weighted NO2 concentrations. 
+```{r, eval = TRUE}
+#Weighted NO2 concentration vs COVID cases. 
+  ggplot(data = weighted.covid.NO2.df, aes(x = pop.weighted.NO2, y = totcases.mil)) +
+  geom_point(color = "#333aff", alpha = 1) +
+  geom_smooth(color = "red") +
+  geom_smooth(method = "lm", color = "purple") +
+  theme_bw() +
+  labs(x = "NO2 Concentration (mol/m^2)", y = "Total COVID-19 Cases per Million People") +
+  labs(title = "World COVID-19 Cases per Million People vs. Population Weighted NO2 Concentration") 
+cor(weighted.covid.NO2.df$totcases.mil, weighted.covid.NO2.df$pop.weighted.NO2, use = "complete.obs") 
+NO2.lm.cases <- lm(totcases.mil ~ pop.weighted.NO2 + gdp.cap + pop.density + med.age, data = weighted.covid.NO2.df)
+summary.lm(NO2.lm.cases)
+confint(NO2.lm.cases) #Summary statistics for linear fit. 
+
+#Weighted NO2 concentration vs COVID deaths. 
+ggplot(data = weighted.covid.NO2.df, aes(x = pop.weighted.NO2, y = totdeaths.mil)) +
+  geom_point(color = "#333aff", alpha = 1) +
+  geom_smooth(color = "red") +
+  geom_smooth(method = "lm", color = "purple") +
+  theme_bw() +
+  labs(x = "NO2 Concentration (mol/m^2)", y = "Total COVID-19 Deaths per Million People") +
+  labs(title = "World COVID-19 Deaths per Million People vs. Population Weighted NO2 Concentration") 
+cor(weighted.covid.NO2.df$totdeaths.mil, weighted.covid.NO2.df$pop.weighted.NO2, use = "complete.obs") 
+NO2.lm.deaths <- lm(totdeaths.mil ~ pop.weighted.NO2 + gdp.cap  + pop.density + med.age, data = weighted.covid.NO2.df,)
+summary.lm(NO2.lm.deaths)
+confint(NO2.lm.deaths) #Summary statistics for linear fit.
+
+#Function for multivariate analysis by Super.region. 
+cases.NO2 <- function(x) { 
+                    weighted.covid.NO2.df %>% 
+                    filter(Super.region == x) %>%
+                    ggplot(aes(x = pop.weighted.NO2, y = totcases.mil)) +
+                        geom_point(color = "#333aff") +
+                        geom_smooth(color = "red") +
+                        geom_smooth(method = "lm", color = "purple") +
+                        theme_bw() +
+                        labs(x = "NO2 Concentration (mol/m^2)", y = "Total COVID-19 Cases per Million People") +
+                        labs(title = paste0("COVID-19 Cases per Million People in ", (Super.region = x), " vs. Population Weighted NO2 Concentration"))
+} 
+NO2.lm.cases.reg <- function(x) {
+                        weighted.covid.NO2.df %>%
+                        filter(Super.region == x) %>%
+                        lm(totcases.mil ~ pop.weighted.NO2 + gdp.cap  + pop.density + med.age,.) %>%
+                        summary.lm()  
+} #Function for linear regression statistics to be included in for loop below. 
+
+for (i in regions.list) {
+   print(cases.NO2(i)) 
+   print(NO2.lm.cases.reg(i)) 
+} #Loops function for continents of interest. 
+
+deaths.NO2 <- function(x) { 
+                    weighted.covid.NO2.df %>% 
+                    filter(Super.region == x) %>%
+                    ggplot(aes(x = pop.weighted.NO2, y = totdeaths.mil)) +
+                        geom_point(color = "#333aff") +
+                        geom_smooth(color = "red") +
+                        geom_smooth(method = "lm", color = "purple") +
+                        theme_bw() +
+                        labs(x = "NO2 Concentration (mol/m^2)", y = "Total COVID-19 Deaths per Million People") +
+                        labs(title = paste0("COVID-19 Deaths per Million People in ", (Super.region = x), " vs. Population Weighted NO2 Concentration"))
+} 
+NO2.lm.deaths.reg <- function(x) {
+                        weighted.covid.NO2.df %>%
+                        filter(Super.region == x) %>%
+                        lm(totdeaths.mil ~ pop.weighted.NO2 + gdp.cap  + pop.density + med.age,.) %>%
+                        summary.lm() #Function for linear regression statistics to be included in for loop below. 
+}
+for (i in regions.list) {
+   print(deaths.NO2(i)) 
+   print(NO2.lm.deaths.reg(i)) 
+} #Loops function for continents of interest.
+
+fatality.rate.NO2 <- function(x) { 
+                    weighted.covid.NO2.df %>% 
+                    filter(Super.region == x) %>%
+                    ggplot(aes(x = pop.weighted.NO2, y = case.fatality.rate)) +
+                        geom_point(color = "#333aff") +
+                        geom_smooth(color = "red") +
+                        geom_smooth(method = "lm", color = "purple") +
+                        theme_bw() +
+                        labs(x = "NO2 Concentration (mol/m^2)", y = "Total COVID-19 Deaths per Million People") +
+                        labs(title = paste0("COVID-19 Deaths per Million People in ", (Super.region = x), " vs. Population Weighted NO2 Concentration"))
+} 
+NO2.lm.fatality.reg <- function(x) {
+                        weighted.covid.NO2.df %>%
+                        filter(Super.region == x) %>%
+                        lm(case.fatality.rate ~ pop.weighted.NO2 + gdp.cap  + pop.density + med.age,.) %>%
+                        summary.lm() #Function for linear regression statistics to be included in for loop below. 
+}
+for (i in regions.list) {
+   print(fatality.rate.NO2(i)) 
+   print(NO2.lm.fatality.reg(i)) 
+} #Loops function for continents of interest.
+```
+
+####Analysis of high and low groups.
+```{r, eval = TRUE}
+high <- data.frame("group" = rep("high", length.out = nrow(high.covid)))
+high.covid <- cbind(high, high.covid)
+low <- data.frame("group" = rep("low", length.out = nrow(low.covid)))
+low.covid <- cbind(low, low.covid)
+df.covid <- rbind(high.covid, low.covid)
+
+#Boxplot of NO2 Concentrations by case groups. 
+ggplot(df.covid, aes(group,NO2_Concentration)) +
+  geom_boxplot() +
+  geom_jitter(color="red", size=0.4, alpha=0.9) +
+  labs(title = "NO2 Concentrations Grouped by COVID Case Levels", x = "Case Count Group", y = "NO2 Concentration (mol/m^2)") +
+  stat_compare_means(method = "t.test")
+
+#Boxplot of weighted NO2 Concentrations by case groups. 
+ggplot(df.covid, aes(group,pop.weighted.NO2)) +
+  geom_boxplot() +
+  geom_jitter(color="red", size=0.4, alpha=0.9) +
+  labs(title = "Weighted NO2 Concentrations Grouped by COVID Case Levels", x = "Case Count Group", y = "Weighted NO2 Concentration") +
+  stat_compare_means(method = "t.test")
+rm(df.covid)
+
+high <- data.frame("group" = rep("high", length.out = nrow(high.NO2)))
+high.NO2 <- cbind(high, high.NO2)
+low <- data.frame("group" = rep("low", length.out = nrow(low.NO2)))
+low.NO2<- cbind(low, low.NO2)
+df.NO2 <- rbind(high.NO2, low.NO2)
+
+#Boxplot of COVID cases by NO2 groups. 
+ggplot(df.NO2, aes(group,totcases.mil)) +
+  geom_boxplot() +
+  geom_jitter(color="red", size=0.4, alpha=0.9) +
+  labs(title = "COVID Cases per Million Grouped by NO2 Concentration Levels", x = "NO2 Concentration Group", y = "Cases per Million") +
+  stat_compare_means(method = "t.test")
+
+#Boxplot of COVID deaths by NO2 groups. 
+ggplot(df.NO2, aes(group,totdeaths.mil)) +
+  geom_boxplot() +
+  geom_jitter(color="red", size=0.4, alpha=0.9) +
+  labs(title = "COVID Deaths per Million Grouped by NO2 Concentration Levels", x = "NO2 Concentration Group", y = "Deaths per Million") +
+  stat_compare_means(method = "t.test")
+
+#Boxplot of COVID CFR by NO2 groups. 
+ggplot(df.NO2, aes(group,case.fatality.rate)) +
+  geom_boxplot() +
+  geom_jitter(color="red", size=0.4, alpha=0.9) +
+  labs(title = "COVID Case Fatality Rate Grouped by NO2 Concentration Levels", x = "NO2 Concentration Group", y = "Case Fatality Rate") +
+  stat_compare_means(method = "t.test")
+rm(df.NO2)
+```
+
+#### Multivariate graphs of COVID outcomes vs weighted NO2 concentrations: NO2 group divisions. 
+```{r, eval = TRUE}
+#High NO2.
+#Weighted NO2 concentration vs COVID cases. 
+ggplot(data = high.NO2, aes(x = pop.weighted.NO2, y = totcases.mil)) +
+  geom_point(color = "#333aff", alpha = 1) +
+  geom_smooth(color = "red") +
+  geom_smooth(method = "lm", color = "purple") +
+  theme_bw() +
+  labs(x = "NO2 Concentration (mol/m^2)", y = "Total COVID-19 Cases per Million People") +
+  labs(title = "High NO2: World COVID-19 Cases per Million vs. Population Weighted NO2 Concentration") 
+cor(high.NO2$totcases.mil, high.NO2$pop.weighted.NO2, use = "complete.obs") 
+NO2.lm.cases <- lm(totcases.mil ~ pop.weighted.NO2 + gdp.cap + pop.density + med.age, data = high.NO2)
+summary.lm(NO2.lm.cases)
+confint(NO2.lm.cases) #Summary statistics for linear fit. 
+
+#Weighted NO2 concentration vs COVID deaths. 
+ggplot(data = high.NO2, aes(x = pop.weighted.NO2, y = totdeaths.mil)) +
+  geom_point(color = "#333aff", alpha = 1) +
+  geom_smooth(color = "red") +
+  geom_smooth(method = "lm", color = "purple") +
+  theme_bw() +
+  labs(x = "NO2 Concentration (mol/m^2)", y = "Total COVID-19 Deaths per Million People") +
+  labs(title = "High NO2: World COVID-19 Deaths per Million vs. Population Weighted NO2 Concentration") 
+cor(high.NO2$totdeaths.mil, high.NO2$pop.weighted.NO2, use = "complete.obs") 
+NO2.lm.deaths <- lm(totdeaths.mil ~ pop.weighted.NO2 + gdp.cap  + pop.density + med.age, data = high.NO2,)
+summary.lm(NO2.lm.deaths)
+confint(NO2.lm.deaths) #Summary statistics for linear fit.
+
+#Weighted NO2 concentration vs COVID CFR. 
+ggplot(data = high.NO2, aes(x = pop.weighted.NO2, y = case.fatality.rate)) +
+  geom_point(color = "#333aff", alpha = 1) +
+  geom_smooth(color = "red") +
+  geom_smooth(method = "lm", color = "purple") +
+  theme_bw() +
+  labs(x = "NO2 Concentration (mol/m^2)", y = "Case Fatality Rate") +
+  labs(title = "High NO2: COVID-19 Case Fatality Rate vs. Population Weighted NO2 Concentration") 
+cor(high.NO2$case.fatality.rate, high.NO2$pop.weighted.NO2, use = "complete.obs") 
+NO2.lm.deaths <- lm(case.fatality.rate ~ pop.weighted.NO2 + gdp.cap  + pop.density + med.age, data = high.NO2,)
+summary.lm(NO2.lm.deaths)
+confint(NO2.lm.deaths) #Summary statistics for linear fit.
+
+#Function for multivariate analysis by Super.region. 
+cases.NO2 <- function(x) { 
+                    high.NO2 %>% 
+                    filter(Super.region == x) %>%
+                    ggplot(aes(x = pop.weighted.NO2, y = totcases.mil)) +
+                        geom_point(color = "#333aff") +
+                        geom_smooth(color = "red") +
+                        geom_smooth(method = "lm", color = "purple") +
+                        theme_bw() +
+                        labs(x = "NO2 Concentration (mol/m^2)", y = "Total COVID-19 Cases per Million People") +
+                        labs(title = paste0("COVID-19 Cases per Million People in ", (Super.region = x), " vs. Population Weighted NO2 Concentration"))
+} 
+NO2.lm.cases.reg <- function(x) {
+                        high.NO2 %>%
+                        filter(Super.region == x) %>%
+                        lm(totcases.mil ~ pop.weighted.NO2 + gdp.cap  + pop.density + med.age,.) %>%
+                        summary.lm()  
+} #Function for linear regression statistics to be included in for loop below. 
+
+for (i in regions.list) {
+   print(cases.NO2(i)) 
+   print(NO2.lm.cases.reg(i)) 
+} #Loops function for continents of interest. 
+
+deaths.NO2 <- function(x) { 
+                    high.NO2 %>% 
+                    filter(Super.region == x) %>%
+                    ggplot(aes(x = pop.weighted.NO2, y = totdeaths.mil)) +
+                        geom_point(color = "#333aff") +
+                        geom_smooth(color = "red") +
+                        geom_smooth(method = "lm", color = "purple") +
+                        theme_bw() +
+                        labs(x = "NO2 Concentration (mol/m^2)", y = "Total COVID-19 Deaths per Million People") +
+                        labs(title = paste0("COVID-19 Deaths per Million People in ", (Super.region = x), " vs. Population Weighted NO2 Concentration"))
+} 
+NO2.lm.deaths.reg <- function(x) {
+                        high.NO2 %>%
+                        filter(Super.region == x) %>%
+                        lm(totdeaths.mil ~ pop.weighted.NO2 + gdp.cap  + pop.density + med.age,.) %>%
+                        summary.lm() #Function for linear regression statistics to be included in for loop below. 
+}
+for (i in regions.list) {
+   print(deaths.NO2(i)) 
+   print(NO2.lm.deaths.reg(i)) 
+} #Loops function for continents of interest.
+
+#Low NO2.
+#Weighted NO2 concentration vs COVID cases. 
+ggplot(data = low.NO2, aes(x = pop.weighted.NO2, y = totcases.mil)) +
+  geom_point(color = "#333aff", alpha = 1) +
+  geom_smooth(color = "red") +
+  geom_smooth(method = "lm", color = "purple") +
+  theme_bw() +
+  labs(x = "NO2 Concentration (mol/m^2)", y = "Total COVID-19 Cases per Million People") +
+  labs(title = "Low NO2: World COVID-19 Cases per Million vs. Population Weighted NO2 Concentration") 
+cor(low.NO2$totcases.mil, low.NO2$pop.weighted.NO2, use = "complete.obs") 
+NO2.lm.cases <- lm(totcases.mil ~ pop.weighted.NO2 + gdp.cap + pop.density + med.age, data = low.NO2)
+summary.lm(NO2.lm.cases)
+confint(NO2.lm.cases) #Summary statistics for linear fit. 
+
+#Weighted NO2 concentration vs COVID deaths. 
+ggplot(data = low.NO2, aes(x = pop.weighted.NO2, y = totdeaths.mil)) +
+  geom_point(color = "#333aff", alpha = 1) +
+  geom_smooth(color = "red") +
+  geom_smooth(method = "lm", color = "purple") +
+  theme_bw() +
+  labs(x = "NO2 Concentration (mol/m^2)", y = "Total COVID-19 Deaths per Million People") +
+  labs(title = "Low NO2: World COVID-19 Deaths per Million vs. Population Weighted NO2 Concentration") 
+cor(low.NO2$totdeaths.mil, low.NO2$pop.weighted.NO2, use = "complete.obs") 
+NO2.lm.deaths <- lm(totdeaths.mil ~ pop.weighted.NO2 + gdp.cap  + pop.density + med.age, data = low.NO2,)
+summary.lm(NO2.lm.deaths)
+confint(NO2.lm.deaths) #Summary statistics for linear fit.
+```
+
 ### Correlation analysis: satellite vs. ground EPA. 
 #### Formatting sattelite and ground data (US only). 
 ```{r, eval = TRUE}
@@ -735,10 +1027,9 @@ continental.US.fxn <- function(x) {
   r1 <- crop(r1, extent(wrld_simpl[wrld_simpl@data$NAME=="United States", ]))
   r1 <- mask(r1, wrld_simpl[wrld_simpl@data$NAME=="United States", ])
   r1 <- rasterToPoints(r1, spatial = TRUE) 
-  July_Oct2018.sat <- data.frame(r1) %>% 
-      select(!("optional")) %>%
-      select( "y", "x", "US_NO2_2018.07.01_start")
-  July_Oct2018.sat <- rename(July_Oct2018.sat, Latitude = y, Longitude = x, NO2_concentration = US_NO2_2018.07.01_start)
+  July_Oct2018.sat <- r1 %>% 
+      data.frame() %>% 
+      select(Latitude = 3, Longitude = 2, NO2_Concentration = 1)
   assign("July_Oct2018.sat", July_Oct2018.sat, .GlobalEnv)
 }  #Final satellite data to use for comparison to EPA data. 
 continental.US.fxn("US_ground_NO2/US_NO2_2018-07-01_start.tif")
@@ -749,7 +1040,7 @@ US.lat.lon <- July_Oct2018.sat %>% select(c(Latitude, Longitude))
 
 #Reading in EPA data
 #Pargasite: only overlapping time frame is July 2018 - October 2018 (Pargasite stops working in November 2018)
-July_Oct2018.ground <- read.csv(file = './US_ground_NO2/July_Oct2018NO2.csv') %>% select(c("Latitude", "Longitude", "no2_estimate")) %>% rename(NO2_concentration = no2_estimate)
+July_Oct2018.ground <- read.csv(file = './US_ground_NO2/July_Oct2018NO2.csv') %>% select(c("Latitude", "Longitude", "no2_estimate")) %>% rename(NO2_Concentration = no2_estimate)
 July_Oct2018.ground <- data.frame(July_Oct2018.ground) #Final EPA data to use in comparison to satellite data. 
 
 #EPA data frame changed to raster format.
@@ -776,7 +1067,7 @@ summary(lm1)
 #### Plotting satellite vs ground data (US only). 
 ```{r, eval = TRUE}
 ggplot() +
- geom_raster(data = July_Oct2018.sat, aes(x = Longitude, y = Latitude, fill = NO2_concentration)) + 
+ geom_raster(data = July_Oct2018.sat, aes(x = Longitude, y = Latitude, fill = NO2_Concentration)) + 
  geom_polygon(data = wrld_simpl[wrld_simpl@data$NAME=="United States", ], aes(x = long, y = lat, group = group), colour = "black", size = 0.5, fill = NA) +
   my_theme() + 
   ggtitle("NO2 US Satellite Data, July-Oct 2018") +
@@ -789,7 +1080,7 @@ ggplot() +
   coord_quickmap()
 
 ggplot() +
- geom_raster(data = July_Oct2018.ground, aes(x = Longitude, y = Latitude, fill = NO2_concentration)) + 
+ geom_raster(data = July_Oct2018.ground, aes(x = Longitude, y = Latitude, fill = NO2_Concentration)) + 
  geom_polygon(data = wrld_simpl[wrld_simpl@data$NAME=="United States", ], aes(x = long, y = lat, group = group), colour = "black", size = 0.5, fill = NA) +
   my_theme() + 
   ggtitle("NO2 US EPA Ground Data, July-Oct 2018") +
@@ -989,10 +1280,162 @@ london.sat.weekly <- purrr::map2_dfr(x, y, london.sat.fxn)
 london.weekly.df <- rbind(london.sat.weekly,london.ground.weekly.df) 
 ```
 
-### Time analysis: NO2 changes during the COVID-19 pandemic.
+### Time analysis: NO2 and COVID changes during the COVID-19 pandemic.
+#### COVID time analysis: interrupted series time analysis plots.
+```{r, fig.width=20, fig.height=4, eval = TRUE}
+ggplot(mean.newcases.df, aes(x = Date, y = Mean_Weekly_New_Cases)) +
+  geom_line(size = 0.75) + 
+  theme(legend.key.size = unit(1, 'cm'),
+        legend.title = element_text(size=14),
+        legend.text = element_text(size=10),
+        axis.title=element_text(size = 20),
+        axis.text.y=element_text(size=24),
+        axis.text.x=element_text(size=30,angle=90, hjust=1)) +
+  ggtitle("World Weekly Averaged COVID Cases") +
+  ylab("Number of Cases") +
+  scale_x_date(date_labels = "%b",date_breaks = "1 month",expand=c(0,0),limits=c(as.Date("2020-01-20",format="%Y-%m-%d"),as.Date("2021-07-04",format="%Y-%m-%d"))) +
+ylim(0, 840000) +
+  
+  #Pre-lockdown
+  geom_rect(data=mean.newcases.df,aes(xmin=as.Date("2019-12-25",format="%Y-%m-%d"),xmax=as.Date("2020-01-23",format="%Y-%m-%d"),ymin=8.3E5,ymax=8.4E5),fill = "#c0c0c0",color = NA, alpha=0.02) +
+  geom_text(data=mean.newcases.df,aes(x=as.Date("2020-01-08"),y=8.35E5),label="Pre-Lockdown",color = "black", size = 1.5) +
+  geom_vline(data=mean.newcases.df,xintercept = as.Date("2020-01-23",format="%Y-%m-%d"),linetype="dashed",colour="black",size=0.75,alpha=0.8) + 
+  #Lockdown 1
+  geom_rect(data=mean.newcases.df,aes(xmin=as.Date("2020-01-23",format="%Y-%m-%d"),xmax=as.Date("2020-07-01",format="%Y-%m-%d"),ymin=8.3E5,ymax=8.4E5),fill = "#fa9796",color = NA,alpha=0.02) +
+  geom_text(data=mean.newcases.df,aes(x=as.Date("2020-04-01"),y=8.35E5),label="Lockdown 1", color = "black", size = 1.5) +
+  geom_vline(data=mean.newcases.df,xintercept=as.Date("2020-07-01",format="%Y-%m-%d"),linetype="dashed",colour="black",size=0.75,alpha=0.8) + 
+  #Re-opening Green PHASE
+  geom_rect(data=mean.newcases.df,aes(xmin=as.Date("2020-07-01",format="%Y-%m-%d"),xmax=as.Date("2021-01-06",format="%Y-%m-%d"),ymin=8.3E5,ymax=8.4E5),fill = "#b5dea5",color = NA,alpha=0.02) +
+  geom_text(data=mean.newcases.df,aes(x=as.Date("2020-09-15"),y=8.35E5),label="Re-Opening", color = "black", size = 1.5) +
+  theme_bw() + 
+  scale_alpha_manual(values = c(0.4, 1.1)) + 
+  scale_color_manual(values = c("gray", "blue", "black")) +
+  ggsave("covid_cases_timeseries.pdf")
+```
+
+####Urban areas only interrupted time series analysis.
+```{r, eval = TRUE}
+#Used code:
+#gsutil -m cp \
+# >   "file names" \
+# >   COVID-19_NO2/time_analysis_2020
+
+# in terminal to copy all files from google cloud storage into folders in working directory. 
+
+#2019 data. 
+#Creates list of raster files from folder to call in function. 
+rastlist.2019.left <- list.files(path = "time_analysis_2019_left", pattern='.tif$', 
+all.files=TRUE, full.names=FALSE)
+rastlist.2019.right <- list.files(path = "time_analysis_2019_right", pattern='.tif$', 
+all.files=TRUE, full.names=FALSE)
+
+#Creates list of dates to call in function. 
+dates.2019 <- seq(as.Date("2018-12-31"), as.Date("2019-12-29"), by=7) #List of dates starting Dec 31 2018. 
+        
+#Function to make data frame for weekly average NO2 concentration. 
+read.fxn <- function(x1, x2, y) {
+  left <- raster(paste0("time_analysis_2019_left/", x1)) %>%
+    flip(direction='y') 
+  right <- raster(paste0("time_analysis_2019_right/", x2)) %>%
+    flip(direction='y') 
+  x <- list(left, right)
+  names(x)[1:2] <- c('x', 'y')
+  x$fun <- mean
+  x$na.rm <- TRUE
+  world.NO2.r <- do.call(mosaic, x) #Combines left and right halves of world raster. 
+  r.vals <- raster::extract(world.NO2.r, world.sf) 
+  r.mean <- sapply(r.vals, FUN=mean, na.rm = TRUE)
+  r.mean <- mean(r.mean, na.rm = TRUE)
+  final.df <- data.frame("NO2_Concentration" = r.mean)   
+  Date <- as.factor(as.Date(dates.2019[[y]] %m+% years(1))) #Adds 1 year to date to match x axis of 2020 dates.
+  Week <- paste0(as.character(as.Date(dates.2019[[y]])), " to ", as.character(as.Date(dates.2019[[y]]) + 6)) 
+  Period <- rep(2019, length.out = nrow(final.df)) 
+  urban.2019.weekly <- cbind(final.df, Period, Date, Week) 
+  urban.2019.weekly <- urban.2019.weekly %>% select(Period, Date, Week, NO2_Concentration)
+}
+  
+x1 <- as.list(rastlist.2019.left)
+x2 <- as.list(rastlist.2019.right)
+y <- as.list(1:length(dates.2019))
+urban.2019.weekly.df <- purrr::pmap_dfr(list(x1, x2, y), read.fxn)
+
+#2020 data.  
+#Creates list of raster files from folder to call in function. 
+rastlist.2020.left <- list.files(path = "time_analysis_2020_left", pattern='.tif$', 
+all.files=TRUE, full.names=FALSE)
+rastlist.2020.right <- list.files(path = "time_analysis_2020_right", pattern='.tif$', 
+all.files=TRUE, full.names=FALSE)
+
+#Creates list of dates to call in function. 
+dates.2020 <- seq(as.Date("2019-12-30"), as.Date("2021-01-03"), by=7) #List of dates starting Dec 30th 2019. 
+
+#Function to make data frame for weekly average NO2 concentration. 
+read.fxn <- function(x1, x2, y) {
+  left <- raster(paste0("time_analysis_2020_left/", x1)) %>%
+    flip(direction='y') 
+  right <- raster(paste0("time_analysis_2020_right/", x2)) %>%
+    flip(direction='y') 
+  x <- list(left, right)
+  names(x)[1:2] <- c('x', 'y')
+  x$fun <- mean
+  x$na.rm <- TRUE
+  world.NO2.r <- do.call(mosaic, x) #Combines left and right halves of world raster. 
+  r.vals <- raster::extract(world.NO2.r, world.sf) 
+  r.mean <- sapply(r.vals, FUN=mean, na.rm = TRUE)
+  r.mean <- mean(r.mean, na.rm = TRUE)
+  final.df <- data.frame("NO2_Concentration" = r.mean)   
+  Date <- as.factor(as.Date(dates.2020[[y]]))  
+  Week <- paste0(as.character(as.Date(dates.2020[[y]])), " to ", as.character(as.Date(dates.2020[[y]]) + 6)) 
+  Period <- rep(2020, length.out = nrow(final.df)) 
+  urban.2020.weekly <- cbind(final.df, Period, Date, Week) 
+  urban.2020.weekly <- urban.2020.weekly %>% select(Period, Date, Week, NO2_Concentration)
+}
+
+x1 <- as.list(rastlist.2020.left)
+x2 <- as.list(rastlist.2020.right)
+y <- as.list(1:length(dates.2020))
+urban.2020.weekly.df <- purrr::pmap_dfr(list(x1, x2, y), read.fxn) 
+urban.weekly.df <- rbind(urban.2019.weekly.df, urban.2020.weekly.df) 
+urban.weekly.df$Date <- as.Date(urban.weekly.df$Date)
+urban.weekly.df$Period <- as.factor(urban.weekly.df$Period)
+```
+
+#### Urban areas time analysis: interrupted series time analysis plots.
+```{r, fig.width=20, fig.height=4, eval = TRUE}
+ggplot(urban.weekly.df, aes(x = Date, y = NO2_Concentration, group = Period, color = Period)) +
+  geom_line(size = 0.75) + 
+  theme(legend.key.size = unit(1, 'cm'),
+        legend.title = element_text(size=14),
+        legend.text = element_text(size=10),
+        axis.title=element_text(size = 20),
+        axis.text.y=element_text(size=24),
+        axis.text.x=element_text(size=30,angle=90, hjust=1)) +
+  labs(fill = "Year of Measured Pollution") +
+  ggtitle("Urban Areas NO2 in 2019 vs 2020") +
+  ylab("NO2 Concentration (mol/m^2)") +
+  scale_x_date(date_labels = "%b",date_breaks = "1 month",expand=c(0,0),limits=c(as.Date("2019-12-25",format="%Y-%m-%d"),as.Date("2020-12-31",format="%Y-%m-%d"))) +
+ylim(0, 2.5E-5) +
+  
+  #Pre-lockdown
+  geom_rect(data=urban.weekly.df,aes(xmin=as.Date("2019-12-25",format="%Y-%m-%d"),xmax=as.Date("2020-01-23",format="%Y-%m-%d"),ymin=2.4E-5,ymax=2.5E-5),fill = "#c0c0c0",color = NA, alpha=0.02) +
+  geom_text(data=urban.weekly.df,aes(x=as.Date("2020-01-08"),y=2.45E-5),label="Pre-Lockdown",color = "black", size = 1.5) +
+  geom_vline(data=urban.weekly.df,xintercept = as.Date("2020-01-23",format="%Y-%m-%d"),linetype="dashed",colour="black",size=0.75,alpha=0.8) + 
+  #Lockdown 1
+  geom_rect(data=urban.weekly.df,aes(xmin=as.Date("2020-01-23",format="%Y-%m-%d"),xmax=as.Date("2020-07-01",format="%Y-%m-%d"),ymin=2.4E-5,ymax=2.5E-5),fill = "#fa9796",color = NA,alpha=0.02) +
+  geom_text(data=urban.weekly.df,aes(x=as.Date("2020-04-01"),y=2.45E-5),label="Lockdown 1", color = "black", size = 1.5) +
+  geom_vline(data=urban.weekly.df,xintercept=as.Date("2020-07-01",format="%Y-%m-%d"),linetype="dashed",colour="black",size=0.75,alpha=0.8) + 
+  #Re-opening Green PHASE
+  geom_rect(data=urban.weekly.df,aes(xmin=as.Date("2020-07-01",format="%Y-%m-%d"),xmax=as.Date("2021-12-31",format="%Y-%m-%d"),ymin=2.4E-5,ymax=2.5E-5),fill = "#b5dea5",color = NA,alpha=0.02) +
+  geom_text(data=urban.weekly.df,aes(x=as.Date("2020-09-15"),y=2.45E-5),label="Re-Opening", color = "black", size = 1.5) +
+  theme_bw() + 
+  scale_alpha_manual(values = c(0.4, 1.1)) + 
+  scale_color_manual(values = c("gray", "blue", "black")) +
+  ggsave("urban_time_series.pdf")
+```
+
 #### US time analysis: interrupted series time analysis data preparation. 
 ```{r, eval = TRUE}
-#Use function in other NO2_Exploratory Analysis file to filter out each week from Jan-Dec 2019 and Jan-Dec 2020 for comparison.
+#Use function in other NO2_Exploratory Analysis filse to filter out each week from Jan-Dec 2019 and Jan-Dec 2020 for comparison.
 
 #Used code:
 # gsutil -m cp \
@@ -1075,23 +1518,23 @@ ggplot(US.weekly.df, aes(x = Date, y = NO2_Concentration, group = Period, color 
   ggtitle("US NO2 in 2019 vs 2020") +
   ylab("NO2 Concentration (mol/m^2)") +
   scale_x_date(date_labels = "%b",date_breaks = "1 month",expand=c(0,0),limits=c(as.Date("2019-12-25",format="%Y-%m-%d"),as.Date("2020-12-31",format="%Y-%m-%d"))) +
-ylim(0, 3E-5) +
+ylim(0, 6E-5) +
   
   #Pre-lockdown
-  geom_rect(data=US.weekly.df,aes(xmin=as.Date("2019-12-25",format="%Y-%m-%d"),xmax=as.Date("2020-03-19",format="%Y-%m-%d"),ymin=2.9E-5,ymax=3E-5),fill = "#c0c0c0",color = NA, alpha=0.02) +
-  geom_text(data=US.weekly.df,aes(x=as.Date("2020-02-07"),y=2.95E-5),label="Pre-Lockdown",color = "black", size = 2) +
+  geom_rect(data=US.weekly.df,aes(xmin=as.Date("2019-12-25",format="%Y-%m-%d"),xmax=as.Date("2020-03-19",format="%Y-%m-%d"),ymin=5.9E-5,ymax=6E-5),fill = "#c0c0c0",color = NA, alpha=0.02) +
+  geom_text(data=US.weekly.df,aes(x=as.Date("2020-02-07"),y=5.95E-5),label="Pre-Lockdown",color = "black", size = 2) +
   geom_vline(data=US.weekly.df,xintercept = as.Date("2020-03-19",format="%Y-%m-%d"),linetype="dashed",colour="black",size=0.75,alpha=0.8) + 
   #Lockdown 1
-  geom_rect(data=US.weekly.df,aes(xmin=as.Date("2020-03-19",format="%Y-%m-%d"),xmax=as.Date("2020-06-05",format="%Y-%m-%d"),ymin=2.9E-5,ymax=3E-5),fill = "#fa9796",color = NA,alpha=0.02) +
-  geom_text(data=US.weekly.df,aes(x=as.Date("2020-05-01"),y=2.95E-5),label="Lockdown 1", color = "black", size = 2) +
+  geom_rect(data=US.weekly.df,aes(xmin=as.Date("2020-03-19",format="%Y-%m-%d"),xmax=as.Date("2020-06-05",format="%Y-%m-%d"),ymin=5.9E-5,ymax=6E-5),fill = "#fa9796",color = NA,alpha=0.02) +
+  geom_text(data=US.weekly.df,aes(x=as.Date("2020-05-01"),y=5.95E-5),label="Lockdown 1", color = "black", size = 2) +
   geom_vline(data=US.weekly.df,xintercept=as.Date("2020-06-05",format="%Y-%m-%d"),linetype="dashed",colour="black",size=0.75,alpha=0.8) + 
   #Re-opening Green PHASE
-  geom_rect(data=US.weekly.df,aes(xmin=as.Date("2020-06-05",format="%Y-%m-%d"),xmax=as.Date("2020-11-16",format="%Y-%m-%d"), ymin=2.9E-5,ymax=3E-5),fill = "#b5dea5",color = NA,alpha=0.02) +
-  geom_text(data=US.weekly.df,aes(x=as.Date("2020-08-15"),y=2.95E-5),label="Re-Opening", color = "black", size = 2) +
+  geom_rect(data=US.weekly.df,aes(xmin=as.Date("2020-06-05",format="%Y-%m-%d"),xmax=as.Date("2020-11-16",format="%Y-%m-%d"), ymin=5.9E-5,ymax=6E-5),fill = "#b5dea5",color = NA,alpha=0.02) +
+  geom_text(data=US.weekly.df,aes(x=as.Date("2020-08-15"),y=5.95E-5),label="Re-Opening", color = "black", size = 2) +
   geom_vline(data=US.weekly.df,xintercept=as.Date("2020-11-16",format="%Y-%m-%d"),linetype="dashed",colour="black",size=0.75,alpha=0.8) + 
   #Lockdown 2
-  geom_rect(data=US.weekly.df,aes(xmin=as.Date("2020-11-16",format="%Y-%m-%d"),xmax=as.Date("2020-12-31",format="%Y-%m-%d"), ymin=2.9E-5,ymax=3E-5),fill = "#fa9796",color = NA,alpha=0.02) +
-  geom_text(data=US.weekly.df,aes(x=as.Date("2020-12-10"),y=2.95E-5),label="Lockdown 2", color = "black", size = 2) +
+  geom_rect(data=US.weekly.df,aes(xmin=as.Date("2020-11-16",format="%Y-%m-%d"),xmax=as.Date("2020-12-31",format="%Y-%m-%d"), ymin=5.9E-5,ymax=6E-5),fill = "#fa9796",color = NA,alpha=0.02) +
+  geom_text(data=US.weekly.df,aes(x=as.Date("2020-12-10"),y=5.95E-5),label="Lockdown 2", color = "black", size = 2) +
   theme_bw() + 
   scale_alpha_manual(values = c(0.4, 1.1)) + 
   scale_color_manual(values = c("gray", "blue", "black")) +
@@ -1176,7 +1619,7 @@ ggplot(China.weekly.df, aes(x = Date, y = NO2_Concentration, group = Period, col
   ggtitle("China NO2 in 2019 vs 2020") +
   ylab("NO2 Concentration (mol/m^2)") +
   scale_x_date(date_labels = "%b-%Y",date_breaks = "1 month",limits=c(as.Date("2019-11-01",format="%Y-%m-%d"),as.Date("2020-11-10",format="%Y-%m-%d"))) +
-ylim(0,4.7E-5) +
+ylim(0,6E-5) +
   theme_bw() +
   theme(legend.key.size = unit(1, 'cm'),
         legend.title = element_text(size=12),
@@ -1184,161 +1627,70 @@ ylim(0,4.7E-5) +
         axis.title = element_text(size = 10),
         axis.text.x = element_text(size=10, angle=45, hjust=1),
         axis.text.y = element_text(size=10)) +
-  
+
   #Pre-lockdown
-  geom_rect(data=China.weekly.df,aes(xmin=as.Date("2019-11-01",format="%Y-%m-%d"),xmax=as.Date("2020-01-23",format="%Y-%m-%d"),ymin=4.6E-5,ymax=4.7E-5),fill = "#c0c0c0",color = NA, alpha=0.02) +
-  geom_text(data=China.weekly.df,aes(x=as.Date("2019-12-15"),y=4.65E-5),label="Pre-Lockdown",color = "black", size = 2) +
+  geom_rect(data=China.weekly.df,aes(xmin=as.Date("2019-11-01",format="%Y-%m-%d"),xmax=as.Date("2020-01-23",format="%Y-%m-%d"),ymin=5.9E-5,ymax=6E-5),fill = "#c0c0c0",color = NA, alpha=0.02) +
+  geom_text(data=China.weekly.df,aes(x=as.Date("2019-12-15"),y=5.95E-5),label="Pre-Lockdown",color = "black", size = 2) +
   geom_vline(data=China.weekly.df,xintercept = as.Date("2020-01-23",format="%Y-%m-%d"),linetype="dashed",colour="black",size=0.75,alpha=0.8) + 
   #Lockdown 1
-  geom_rect(data=China.weekly.df,aes(xmin=as.Date("2020-01-23",format="%Y-%m-%d"),xmax=as.Date("2020-04-08",format="%Y-%m-%d"),ymin=4.6E-5,ymax=4.7E-5),fill = "#fa9796",color = NA,alpha=0.02) +
-  geom_text(data=China.weekly.df,aes(x=as.Date("2020-03-01"),y=4.65E-5),label="Lockdown 1", color = "black", size = 2) +
+  geom_rect(data=China.weekly.df,aes(xmin=as.Date("2020-01-23",format="%Y-%m-%d"),xmax=as.Date("2020-04-08",format="%Y-%m-%d"),ymin=5.9E-5,ymax=6E-5),fill = "#fa9796",color = NA,alpha=0.02) +
+  geom_text(data=China.weekly.df,aes(x=as.Date("2020-03-01"),y=5.95E-5),label="Lockdown 1", color = "black", size = 2) +
   geom_vline(data=China.weekly.df,xintercept=as.Date("2020-04-08",format="%Y-%m-%d"),linetype="dashed",colour="black",size=0.75,alpha=0.8) + 
   #Re-opening Green PHASE
-  geom_rect(data=China.weekly.df,aes(xmin=as.Date("2020-04-08",format="%Y-%m-%d"),xmax=as.Date("2020-11-08",format="%Y-%m-%d"), ymin=4.6E-5,ymax=4.7E-5),fill = "#b5dea5",color = NA,alpha=0.02) +
-  geom_text(data=China.weekly.df,aes(x=as.Date("2020-08-01"),y=4.65E-5),label="Re-Opening", color = "black", size = 2) +
+  geom_rect(data=China.weekly.df,aes(xmin=as.Date("2020-04-08",format="%Y-%m-%d"),xmax=as.Date("2020-11-08",format="%Y-%m-%d"), ymin=5.9E-5,ymax=6E-5),fill = "#b5dea5",color = NA,alpha=0.02) +
+  geom_text(data=China.weekly.df,aes(x=as.Date("2020-08-01"),y=5.95E-5),label="Re-Opening", color = "black", size = 2) +
   scale_alpha_manual(values = c(0.4, 1.1)) + 
   scale_color_manual(values = c("gray", "blue", "black")) +
   ggsave("China_time_series.pdf")
 ```
 
-#### Attempt to do interrupted time series analysis with all world data. 
-```{r, eval = FALSE}
-#Use function in other NO2_Exploratory Analysis file to filter out each week from Jan-Dec 2019 and Jan-Dec 2020 for comparison. 
-#Unsuccessful so far: need to remove inner country boundaries from shapefile and use only world outline. 
-
-#Used code:
-#gsutil -m cp \
-# >   "file names" \
-# >   COVID-19_NO2/time_analysis_2020
-
-# in terminal to copy all files from google cloud storage into folders in working directory. 
-
-#2019 data. 
-#Creates list of raster files from folder to call in function. 
-rastlist.2019.left <- list.files(path = "time_analysis_2019_left", pattern='.tif$', 
-all.files=TRUE, full.names=FALSE)
-rastlist.2019.right <- list.files(path = "time_analysis_2019_right", pattern='.tif$', 
-all.files=TRUE, full.names=FALSE)
-
-#Creates list of dates to call in function. 
-dates.2019 <- seq(as.Date("2018-12-31"), as.Date("2019-12-29"), by=7) #List of dates starting Dec 31 2018. 
-
-#Function to make data frame for weekly average NO2 concentration. 
-read.fxn <- function(x1, x2, y) {
-  left <- raster(paste0("time_analysis_2019_left/", x1)) %>%
-    flip(direction='y') 
-  right <- raster(paste0("time_analysis_2019_right/", x2)) %>%
-    flip(direction='y') 
-  x <- list(left, right)
-  names(x)[1:2] <- c('x', 'y')
-  x$fun <- mean
-  x$na.rm <- TRUE
-  world.NO2.r <- do.call(mosaic, x) %>% flip(direction='y')   #Combines left and right halves of world raster. 
-  r.vals <- raster::extract(world.NO2.r, wrld_simpl) 
-  r.mean <- lapply(r.vals, FUN=mean, na.rm = TRUE)
-  final.df <- data.frame(wrld_simpl@data, r.mean)  
-  Date <- as.Date(dates.2019[[y]])
-  Week <- paste0(as.character(as.Date(dates.2019[[y]])), " to ", as.character(as.Date(dates.2019[[y]]) + 6)) 
-  Period <- rep(2019, length.out = nrow(final.df)) 
-  world.2019.weekly <- cbind(final.df, Date, Week, Period) 
-  world.2019.weekly <- world.2019.weekly %>% dplyr::mutate(Date = as.factor(strftime(as.Date(Date, format="%Y-%m-%d"), format="%m-%d")))
-  rm(r.mean, r.vals)
-  names(world.2019.weekly)[12] <- "NO2_Concentration"
-  world.2019.weekly <- world.2019.weekly %>% select(Period, Date, Week, NO2_Concentration)
-}
-
-x1 <- rastlist.2019.left
-x2 <- rastlist.2019.right
-y <- 1:length(dates.2019)
-world.2019.weekly.df <- purrr::map2_dfr(x1, x2, y, read.fxn) 
-world.2019.weekly.df$Date <- paste0("2020-", world.2019.weekly.df$Date)
-
-#2020 data.  
-#Creates list of raster files from folder to call in function. 
-rastlist.2020.left <- list.files(path = "time_analysis_2020_left", pattern='.tif$', 
-all.files=TRUE, full.names=FALSE)
-rastlist.2020.right <- list.files(path = "time_analysis_2020_right", pattern='.tif$', 
-all.files=TRUE, full.names=FALSE)
-
-#Creates list of dates to call in function. 
-dates.2020 <- seq(as.Date("2019-12-30"), as.Date("2021-01-03"), by=7) #List of dates starting Dec 30th 2019. 
-
-#Function to make data frame for weekly average NO2 concentration. 
-read.fxn <- function(x1, x2, y) {
-  left <- raster(paste0("time_analysis_2020_left/", x1)) %>%
-    flip(direction='y') 
-  right <- raster(paste0("time_analysis_2020_right/", x2)) %>%
-    flip(direction='y') 
-  x <- list(left, right)
-  names(x)[1:2] <- c('x', 'y')
-  x$fun <- mean
-  x$na.rm <- TRUE
-  world.NO2.r <- do.call(mosaic, x) %>% flip(direction='y')  #Combines left and right halves of world raster. 
-  r.vals <- raster::extract(r, wlrd_simpl)
-  r.mean <- lapply(r.vals, FUN=mean, na.rm = TRUE)
-  final.df <- data.frame(wrld_simpl@data, r.mean)   
-  Date <- as.factor(as.Date(dates.2020[[y]]))
-  Week <- paste0(as.character(as.Date(dates.2020[[y]])), " to ", as.character(as.Date(dates.2020[[y]]) + 6)) 
-  Period <- rep(2020, length.out = nrow(final.df)) 
-  world.2020.weekly <- cbind(final.df, Date, Week, Period)     # Add new column to data
-  rm(r.mean, r.vals)
-  names(world.2020.weekly)[12] <- "NO2_Concentration"
-  world.2020.weekly <- world.2020.weekly %>% select(Period, Date, Week, NO2_Concentration)
-}
-
-x1 <- rastlist.2020.left
-x2 <- rastlist.2020.right
-y <- 1:length(dates.2020)
-world.2020.weekly.df <- purrr::map2_dfr(x1, x2, y, read.fxn) 
-world.weekly.df <- rbind(world.2019.weekly.df, world.2020.weekly.df) 
-world.weekly.df$Date <- as.Date(world.weekly.df$Date)
-world.weekly.df$Period <- as.factor(world.weekly.df$Period)
-```
-
 #### US time analysis plots. 
 ```{r, eval = TRUE}
-#Converting before lockdown and after lockdown rasters for US to data frames.  
-before.lockdown <- raster('./US_NO2_comparison/US_NO2_2020-01-19_start.tif') %>%
-  flip(direction='y') %>%
+#Converting before lockdown and after lockdown rasters for US to data frames.
+US.NO2.change.fxn <- function(file) {
+  r <- raster(paste0('./US_NO2_comparison/', file)) %>%
+  flip(direction='y') 
+  df <- r %>% crop(., extent(wrld_simpl[wrld_simpl@data$NAME=="United States", ])) %>% 
+  mask(., wrld_simpl[wrld_simpl@data$NAME=="United States", ]) %>%
   rasterToPoints(spatial = TRUE) %>%
-  data.frame() 
-before.lockdown <- before.lockdown %>%
-  rename(c(NO2_concentration = US_NO2_2020.01.19_start, Longitude = x, Latitude = y)) %>%
-  select(c("Latitude", "Longitude", "NO2_concentration"))
+  data.frame() %>%
+  select(NO2_Concentration = 1, Longitude = 2, Latitude = 3) 
+  df
+}
+files <- c("US_NO2_2019-01-19_start.tif", "US_NO2_2019-03-19_start.tif", "US_NO2_2020-01-19_start.tif", "US_NO2_2020-03-19_start.tif", "US_NO2_2021-01-19_start.tif", "US_NO2_2021-03-19_start.tif")
 
-after.lockdown <- raster('./US_NO2_comparison/US_NO2_2020-03-19_start.tif') %>%
-  flip(direction='y') %>%
-  rasterToPoints(spatial = TRUE) %>%
-  data.frame() 
-after.lockdown <- after.lockdown %>%
-  rename(c(NO2_concentration = US_NO2_2020.03.19_start, Longitude = x, Latitude = y)) %>%
-  select(c("Latitude", "Longitude", "NO2_concentration"))
+US.NO2.list <- purrr::map(files, US.NO2.change.fxn)
 
 #Plotting before and after maps. 
+US.NO2.change.map.fxn <- function(x, y, t1, t2) {
 p1 <- ggplot() +
-  geom_raster(data = before.lockdown , aes(x = Longitude, y = Latitude, fill = NO2_concentration)) + 
-  geom_polygon(data = wrld_simpl[wrld_simpl@data$NAME=="United States", ], aes(x = long, y = lat, group = group), colour = "black", fill = NA) +
-  coord_quickmap(
-    xlim = c(-123, -65),
-    ylim = c(23, 49)
-  ) + 
-  labs(fill = "NO2 Concentration \n(mol/m^2)") +
-  scale_fill_viridis_c(limits = c(0, 0.00015)) +
-  ggtitle("US NO2 Concentrations (Sentinel Satellite) Before COVID-19 Lockdown")
-  
+ geom_raster(data = x, aes(x = Longitude, y = Latitude, fill = NO2_Concentration)) + 
+ geom_polygon(data = wrld_simpl[wrld_simpl@data$NAME=="United States", ], aes(x = long, y = lat, group = group), colour = "black", size = 0.5, fill = NA) +
+  my_theme() + 
+  ggtitle(paste("US NO2 Concentrations (Sentinel Satellite)", t1)) +
+  scale_fill_gradientn(name = "NO2 Concentration \n(mol/m^2)", colours = myPalette(100), limits=c(0, 10E-5)) +
+    north(x.min = -130, y.min = 23, x.max = -65, y.max = 49, anchor = c(x=-119, y=32), symbol=12) +
+    scalebar(x.min = -130, y.min = 23, x.max = -65, y.max = 49, dist = 200, dist_unit = 'km', transform = TRUE, anchor = c(x=-120, y=27.5), st.size = 1.5, model = 'WGS84') +
+  xlim(-130,-65) +
+  ylim(23,49) +
+  coord_quickmap()
 p2 <- ggplot() +
-  geom_raster(data = after.lockdown , aes(x = Longitude, y = Latitude, fill = NO2_concentration)) + 
-  geom_polygon(data = wrld_simpl[wrld_simpl@data$NAME=="United States", ], aes(x = long, y = lat, group = group), colour = "black", fill = NA) +
-  coord_quickmap(
-    xlim = c(-123, -65),
-    ylim = c(23, 49)
-  ) + 
-  labs(fill = "NO2 Concentration \n(mol/m^2)") +
-  scale_fill_viridis_c(limits = c(0, 0.00015)) +
-  ggtitle("US NO2 Concentrations (Sentinel Satellite) After COVID-19 Lockdown")
-
+ geom_raster(data = y, aes(x = Longitude, y = Latitude, fill = NO2_Concentration)) + 
+ geom_polygon(data = wrld_simpl[wrld_simpl@data$NAME=="United States", ], aes(x = long, y = lat, group = group), colour = "black", size = 0.5, fill = NA) +
+  my_theme() + 
+  ggtitle(paste("US NO2 Concentrations (Sentinel Satellite)", t2)) +
+  scale_fill_gradientn(name = "NO2 Concentration \n(ppb)", colours = myPalette(100), limits=c(0, 10E-5)) +
+    north(x.min = -130, y.min = 23, x.max = -65, y.max = 49, anchor = c(x=-119, y=32), symbol=12) +
+    scalebar(x.min = -130, y.min = 23, x.max = -65, y.max = 49, dist = 200, dist_unit = 'km', transform = TRUE, anchor = c(x=-120, y=27.5), st.size = 1.5, model = 'WGS84') +
+  xlim(-130,-65) +
+  ylim(23,49) +
+  coord_quickmap()
 plot_grid(p1, p2, labels = "AUTO", ncol = 1)
-rm(p1, p2)
+}
+
+US.NO2.change.map.fxn(data.frame(US.NO2.list[1]), data.frame(US.NO2.list[2]), "Jan-March 2019", "March-May 2019")
+US.NO2.change.map.fxn(data.frame(US.NO2.list[3]), data.frame(US.NO2.list[4]), "Jan-March 2020", "March-May 2020")
+US.NO2.change.map.fxn(data.frame(US.NO2.list[5]), data.frame(US.NO2.list[6]), "Jan-March 2021", "March-May 2021")
 ```
 
 #### US time analysis (violin plots).
@@ -1554,42 +1906,52 @@ US_2021_boxplot("US_NO2_2021-01-19_start.tif", "US_NO2_2021-03-19_start.tif")
 
 #### China time analysis plots. 
 ```{r, eval = TRUE}
-#Converting before lockdown and after lockdown rasters for US to data frames.  
-before.lockdown <- raster('./China_NO2_comparison/China_NO2_2019-11-23_start.tif') %>%
-  flip(direction='y') %>%
+#Converting before lockdown and after lockdown rasters for China to data frames.
+China.NO2.change.fxn <- function(file) {
+  r <- raster(paste0('./China_NO2_comparison/', file)) %>%
+  flip(direction='y') 
+  df <- r %>% crop(., extent(wrld_simpl[wrld_simpl@data$NAME=="China", ])) %>% 
+  mask(., wrld_simpl[wrld_simpl@data$NAME=="China", ]) %>%
   rasterToPoints(spatial = TRUE) %>%
-  data.frame() 
-before.lockdown <- before.lockdown %>%
-  rename(c(NO2_concentration = China_NO2_2019.11.23_start, Longitude = x, Latitude = y)) %>%
-  select(c("Latitude", "Longitude", "NO2_concentration"))
+  data.frame() %>%
+  select(NO2_Concentration = 1, Longitude = 2, Latitude = 3) 
+  df
+}
 
-after.lockdown <- raster('./China_NO2_comparison/China_NO2_2020-01-23_start.tif') %>%
-  flip(direction='y') %>%
-  rasterToPoints(spatial = TRUE) %>%
-  data.frame() 
-after.lockdown <- after.lockdown %>%
-  rename(c(NO2_concentration = China_NO2_2020.01.23_start, Longitude = x, Latitude = y)) %>%
-  select(c("Latitude", "Longitude", "NO2_concentration"))
+files <- c("China_NO2_2018-11-23_start.tif", "China_NO2_2019-01-23_start.tif", "China_NO2_2019-11-23_start.tif", "China_NO2_2020-01-23_start.tif", "China_NO2_2020-11-23_start.tif", "China_NO2_2021-01-23_start.tif")
+
+China.NO2.list <- purrr::map(files, China.NO2.change.fxn)
 
 #Plotting before and after maps. 
+China.NO2.change.map.fxn <- function(x, y, t1, t2) {
 p1 <- ggplot() +
-  geom_raster(data = before.lockdown , aes(x = Longitude, y = Latitude, fill = NO2_concentration)) + 
-  geom_polygon(data = wrld_simpl[wrld_simpl@data$NAME=="China", ], aes(x = long, y = lat, group = group), colour = "black", fill = NA) +
-  coord_quickmap() +
-  labs(fill = "NO2 Concentration \n(mol/m^2)") +
-  scale_fill_viridis_c(limits = c(0, 0.0005)) +
-  ggtitle("China NO2 Concentrations (Sentinel Satellite) Before COVID-19 Lockdown")
-  
+ geom_raster(data = x, aes(x = Longitude, y = Latitude, fill = NO2_Concentration)) + 
+ geom_polygon(data = wrld_simpl[wrld_simpl@data$NAME=="China", ], aes(x = long, y = lat, group = group), colour = "black", size = 0.5, fill = NA) +
+  my_theme() + 
+  ggtitle(paste("China NO2 Concentrations (Sentinel Satellite)", t1)) +
+  scale_fill_gradientn(name = "NO2 Concentration \n(mol/m^2)", colours = myPalette(100), limits=c(0, 5.5E-4)) +
+    north(x.min = 73, y.min = 18, x.max = 135, y.max = 54, anchor = c(x=84, y=28), symbol=12) +
+    scalebar(x.min = 73, y.min = 18, x.max = 135, y.max = 54, dist = 250, dist_unit = 'km', transform = TRUE, anchor = c(x=84, y=22.5), st.size = 1.5, height = 0.02, model = 'WGS84') +
+  xlim(73, 135) +
+  ylim(18, 54) +
+  coord_quickmap()
 p2 <- ggplot() +
-  geom_raster(data = after.lockdown , aes(x = Longitude, y = Latitude, fill = NO2_concentration)) + 
-  geom_polygon(data = wrld_simpl[wrld_simpl@data$NAME=="China", ], aes(x = long, y = lat, group = group), colour = "black", fill = NA) +
-  coord_quickmap() +
-  labs(fill = "NO2 Concentration \n(mol/m^2)") +
-  scale_fill_viridis_c(limits = c(0, 0.0005)) +
-  ggtitle("China NO2 Concentrations (Sentinel Satellite) After COVID-19 Lockdown")
-
+ geom_raster(data = y, aes(x = Longitude, y = Latitude, fill = NO2_Concentration)) + 
+ geom_polygon(data = wrld_simpl[wrld_simpl@data$NAME=="China", ], aes(x = long, y = lat, group = group), colour = "black", size = 0.5, fill = NA) +
+  my_theme() + 
+  ggtitle(paste("China NO2 Concentrations (Sentinel Satellite)", t2)) +
+  scale_fill_gradientn(name = "NO2 Concentration \n(ppb)", colours = myPalette(100), limits=c(0, 5.5E-4)) +
+    north(x.min = 73, y.min = 18, x.max = 135, y.max = 54, anchor = c(x=84, y=28), symbol=12) +
+    scalebar(x.min = 73, y.min = 18, x.max = 135, y.max = 54, dist = 250, dist_unit = 'km', transform = TRUE, anchor = c(x=84, y=22.5), st.size = 1.5, height = 0.02, model = 'WGS84') +
+  xlim(73, 135) +
+  ylim(18, 54) +
+  coord_quickmap()
 plot_grid(p1, p2, labels = "AUTO", ncol = 1)
-rm(p1, p2)
+}
+
+China.NO2.change.map.fxn(data.frame(China.NO2.list[1]), data.frame(China.NO2.list[2]), "Nov-Jan 2019", "Jan-March 2019")
+China.NO2.change.map.fxn(data.frame(China.NO2.list[3]), data.frame(China.NO2.list[4]), "Nov-Jan 2020", "Jan-March 2020")
+China.NO2.change.map.fxn(data.frame(China.NO2.list[5]), data.frame(China.NO2.list[6]), "Nov-Jan 2021", "Jan-March 2021")
 ```
 
 #### China time analysis (violin).

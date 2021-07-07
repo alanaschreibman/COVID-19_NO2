@@ -47,10 +47,12 @@ summary(owid)
 Data set, including possible confounders for use in later analysis, is cleaned and filtered below. 
 ```{r, eval = TRUE}
 owid.filtered <- owid %>%
-                  rename(iso.code = iso_code, totcases = total_cases, totdeaths = total_deaths, totcases.mil = total_cases_per_million, totdeaths.mil = total_deaths_per_million, pop.density = population_density, med.age = median_age, older70 = aged_70_older, gdp.cap = gdp_per_capita, card.death = cardiovasc_death_rate, diab.prev = diabetes_prevalence, fem.smokers = female_smokers, male.smokers = male_smokers) %>%
-                  select(c(iso.code:totcases, totdeaths, totcases.mil, totdeaths.mil, population, pop.density, med.age, older70, gdp.cap, card.death, diab.prev, fem.smokers, male.smokers)) %>% #Renamed variables and filtered to keep only those of interest. 
+                  rename(iso.code = iso_code, totcases = total_cases, newcases = new_cases, totdeaths = total_deaths, newdeaths = new_deaths, totcases.mil = total_cases_per_million, totdeaths.mil = total_deaths_per_million, pop.density = population_density, med.age = median_age, older70 = aged_70_older, gdp.cap = gdp_per_capita, card.death = cardiovasc_death_rate, diab.prev = diabetes_prevalence, fem.smokers = female_smokers, male.smokers = male_smokers) %>%
+                  select(c(iso.code:newcases, totdeaths, newdeaths, totcases.mil, totdeaths.mil, population, pop.density, med.age, older70, gdp.cap, card.death, diab.prev, fem.smokers, male.smokers)) %>% #Renamed variables and filtered to keep only those of interest. 
                   filter(date == "2021-06-28") #Filtered out all but most recent date (most recent date is a running sum of total cases).
 table(owid.filtered$continent, useNA = "ifany") #Data includes both continent and country-specific outcomes. Continent outcomes can be distinguished by "NA" in the continent column; the continent name is in the location column. 
+cfr.df <- data.frame("case.fatality.rate"= owid.filtered$totdeaths / owid.filtered$totcases, "location" = owid.filtered$location) 
+owid.filtered <- merge(owid.filtered, cfr.df, by = "location")
 ```
 
 More exploratory analysis of data frames:
@@ -58,6 +60,34 @@ More exploratory analysis of data frames:
 dim(owid.filtered)
 head(owid.filtered)
 tail(owid.filtered)
+```
+
+####Filtering to get weekly averages for new cases and new deaths.
+```{r, eval = TRUE}
+dates.covid.weekly <- seq(as.Date("2020-01-20"), as.Date("2021-07-04"), by=7) 
+
+owid.time.series.fxn <- function(t) {
+  df <- owid %>%
+  select(location, date, newcases = new_cases, newdeaths = new_deaths) %>%
+  filter(location=="World") %>%
+  filter(date %in% (as.Date(t):(as.Date(t) + 6)))
+  df
+}
+max(mean.newcases.df$`Mean_Weekly_New_Cases`)
+owid.time.series.list <- purrr::map(dates.covid.weekly, owid.time.series.fxn) #Creates list of data frames, each corresponding to a particular week during lockdown. 
+
+covid.mean.fxn <- function(x, column) {
+  df <- data.frame(owid.time.series.list[[x]])
+  mean <- mean(df[[column]], na.rm = T)
+  Date <- as.Date(dates.covid.weekly[[x]])
+  Week <- paste0(as.character(as.Date(dates.covid.weekly[[x]])), " to ", as.character(as.Date(dates.covid.weekly[[x]]) + 6)) 
+  df <- data.frame(Date, Week, mean) %>% select(Date, Week, Mean_Weekly_New_Cases = 3)
+  df
+}
+
+x <- 1:76
+mean.newcases.df <- purrr::map2_dfr(x, "newcases", covid.mean.fxn)
+mean.newdeaths.df <- purrr::map2_dfr(x, "newdeaths", covid.mean.fxn)
 ```
 
 #### Continent Analysis
@@ -102,6 +132,12 @@ select(owid.continents, c(iso.code:date, hosp.patients, hosp.patients.mil)) #COV
 select(owid.countries, c(iso.code:totcases, totcases.mil)) #COVID-19 cases by country. 
 select(owid.countries, c(iso.code:date, totdeaths, totdeaths.mil)) #COVID-19 deaths by country. 
 select(owid.countries, c(iso.code:date, hosp.patients, hosp.patients.mil)) #COVID-19 hospitalizations by country.  
+```
+
+##Time analysis.
+```{r, eval = TRUE}
+1-22-2020
+7-06-2021
 ```
 
 ## Case Count Plots
