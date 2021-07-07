@@ -76,18 +76,20 @@ owid.time.series.fxn <- function(t) {
 max(mean.newcases.df$`Mean_Weekly_New_Cases`)
 owid.time.series.list <- purrr::map(dates.covid.weekly, owid.time.series.fxn) #Creates list of data frames, each corresponding to a particular week during lockdown. 
 
-covid.mean.fxn <- function(x, column) {
+covid.mean.fxn <- function(x, column, lab) {
   df <- data.frame(owid.time.series.list[[x]])
   mean <- mean(df[[column]], na.rm = T)
   Date <- as.Date(dates.covid.weekly[[x]])
   Week <- paste0(as.character(as.Date(dates.covid.weekly[[x]])), " to ", as.character(as.Date(dates.covid.weekly[[x]]) + 6)) 
-  df <- data.frame(Date, Week, mean) %>% select(Date, Week, Mean_Weekly_New_Cases = 3)
+  col.lab <- as.character(paste0("Mean_Weekly_", lab))
+  df <- data.frame(Date, Week, mean) 
+  names(df)[3] <- as.character(paste0("Mean_Weekly_", lab))
   df
 }
 
 x <- 1:76
-mean.newcases.df <- purrr::map2_dfr(x, "newcases", covid.mean.fxn)
-mean.newdeaths.df <- purrr::map2_dfr(x, "newdeaths", covid.mean.fxn)
+mean.newcases.df <- purrr::pmap_dfr(list(x, "newcases", "Cases"), covid.mean.fxn)
+mean.newdeaths.df <- purrr::pmap_dfr(list(x, "newdeaths", "Deaths"), covid.mean.fxn)
 ```
 
 #### Continent Analysis

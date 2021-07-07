@@ -1283,7 +1283,8 @@ london.weekly.df <- rbind(london.sat.weekly,london.ground.weekly.df)
 ### Time analysis: NO2 and COVID changes during the COVID-19 pandemic.
 #### COVID time analysis: interrupted series time analysis plots.
 ```{r, fig.width=20, fig.height=4, eval = TRUE}
-ggplot(mean.newcases.df, aes(x = Date, y = Mean_Weekly_New_Cases)) +
+#Cases
+ggplot(mean.newcases.df, aes(x = Date, y = Mean_Weekly_Count)) +
   geom_line(size = 0.75) + 
   theme(legend.key.size = unit(1, 'cm'),
         legend.title = element_text(size=14),
@@ -1305,12 +1306,42 @@ ylim(0, 840000) +
   geom_text(data=mean.newcases.df,aes(x=as.Date("2020-04-01"),y=8.35E5),label="Lockdown 1", color = "black", size = 1.5) +
   geom_vline(data=mean.newcases.df,xintercept=as.Date("2020-07-01",format="%Y-%m-%d"),linetype="dashed",colour="black",size=0.75,alpha=0.8) + 
   #Re-opening Green PHASE
-  geom_rect(data=mean.newcases.df,aes(xmin=as.Date("2020-07-01",format="%Y-%m-%d"),xmax=as.Date("2021-01-06",format="%Y-%m-%d"),ymin=8.3E5,ymax=8.4E5),fill = "#b5dea5",color = NA,alpha=0.02) +
+  geom_rect(data=mean.newcases.df,aes(xmin=as.Date("2020-07-01",format="%Y-%m-%d"),xmax=as.Date("2021-07-04",format="%Y-%m-%d"),ymin=8.3E5,ymax=8.4E5),fill = "#b5dea5",color = NA,alpha=0.02) +
   geom_text(data=mean.newcases.df,aes(x=as.Date("2020-09-15"),y=8.35E5),label="Re-Opening", color = "black", size = 1.5) +
   theme_bw() + 
   scale_alpha_manual(values = c(0.4, 1.1)) + 
   scale_color_manual(values = c("gray", "blue", "black")) +
   ggsave("covid_cases_timeseries.pdf")
+
+#Deaths
+ggplot(mean.newdeaths.df , aes(x = Date, y = Mean_Weekly_Count)) +
+  geom_line(size = 0.75) + 
+  theme(legend.key.size = unit(1, 'cm'),
+        legend.title = element_text(size=14),
+        legend.text = element_text(size=10),
+        axis.title=element_text(size = 20),
+        axis.text.y=element_text(size=24),
+        axis.text.x=element_text(size=30,angle=90, hjust=1)) +
+  ggtitle("World Weekly Averaged COVID Deaths") +
+  ylab("Number of Deaths") +
+  scale_x_date(date_labels = "%b",date_breaks = "1 month",expand=c(0,0),limits=c(as.Date("2020-01-20",format="%Y-%m-%d"),as.Date("2021-07-04",format="%Y-%m-%d"))) +
+ylim(0, 1.5E4) +
+  
+  #Pre-lockdown
+  geom_rect(data=mean.newdeaths.df,aes(xmin=as.Date("2019-12-25",format="%Y-%m-%d"),xmax=as.Date("2020-01-23",format="%Y-%m-%d"),ymin=1.45E4,ymax=1.5E4),fill = "#c0c0c0",color = NA, alpha=0.02) +
+  geom_text(data=mean.newdeaths.df,aes(x=as.Date("2020-01-08"),y=1.475E4),label="Pre-Lockdown",color = "black", size = 1.5) +
+  geom_vline(data=mean.newdeaths.df,xintercept = as.Date("2020-01-23",format="%Y-%m-%d"),linetype="dashed",colour="black",size=0.75,alpha=0.8) + 
+  #Lockdown 1
+  geom_rect(data=mean.newdeaths.df,aes(xmin=as.Date("2020-01-23",format="%Y-%m-%d"),xmax=as.Date("2020-07-01",format="%Y-%m-%d"),ymin=1.45E4,ymax=1.5E4),fill = "#fa9796",color = NA,alpha=0.02) +
+  geom_text(data=mean.newdeaths.df,aes(x=as.Date("2020-04-01"),y=1.475E4),label="Lockdown 1", color = "black", size = 1.5) +
+  geom_vline(data=mean.newdeaths.df,xintercept=as.Date("2020-07-01",format="%Y-%m-%d"),linetype="dashed",colour="black",size=0.75,alpha=0.8) + 
+  #Re-opening Green PHASE
+  geom_rect(data=mean.newdeaths.df,aes(xmin=as.Date("2020-07-01",format="%Y-%m-%d"),xmax=as.Date("2021-07-04",format="%Y-%m-%d"),ymin=1.45E4,ymax=1.5E4),fill = "#b5dea5",color = NA,alpha=0.02) +
+  geom_text(data=mean.newdeaths.df,aes(x=as.Date("2020-09-15"),y=1.475E4),label="Re-Opening", color = "black", size = 1.5) +
+  theme_bw() + 
+  scale_alpha_manual(values = c(0.4, 1.1)) + 
+  scale_color_manual(values = c("gray", "blue", "black")) +
+  ggsave("covid_deaths_timeseries.pdf")
 ```
 
 ####Urban areas only interrupted time series analysis.
@@ -1431,6 +1462,12 @@ ylim(0, 2.5E-5) +
   scale_alpha_manual(values = c(0.4, 1.1)) + 
   scale_color_manual(values = c("gray", "blue", "black")) +
   ggsave("urban_time_series.pdf")
+```
+
+####Combining COVID time series data frame with NO2.
+```{r, eval = TRUE}
+covid.weekly.df <- mean.newcases.df %>% inner_join(mean.newdeaths.df, by = c("Date", "Week"))
+total.weekly.df <- urban.weekly.df %>% left_join(covid.weekly.df, by = "Week")
 ```
 
 #### US time analysis: interrupted series time analysis data preparation. 
