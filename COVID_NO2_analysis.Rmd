@@ -26,17 +26,21 @@ libraries("rgdal", "gdalUtils", "rgeos", "raster", "exactextractr", "maptools", 
 ```
 
 ### Merging NO2 data with COVID data for analysis.  
-#### Preparing shapefiles and COVID data.
+#### Preparing shapefiles.
 ```{r, eval = TRUE}
 #Reading in world countries shapefile.
 data(wrld_simpl)
 wrld_simpl@data[["NAME"]]
 plot(wrld_simpl) 
+wrld_simpl[wrld_simpl$NAME == "United States", ]
 
 #Reading in urban areas shapefile. 
 world.sf <- st_read("urban_shapefile/ne_10m_urban_areas_landscan.shp", crs = 4979)  # Read shapefile as an sf object
 us.urban.sf <- st_read("us_urban_shapefile/tl_2017_us_uac10.shp", crs = 4979)  # Read shapefile as an sf object
+```
 
+#### Preparing COVID data.
+```{r, eval = TRUE}
 #Filtering COVID data (from COVID exploratory analysis.)
 owid <- read.csv(url("https://raw.githubusercontent.com/owid/covid-19-data/master/public/data/owid-covid-data.csv"), na.strings = c("", "NA"), colClasses = c("date" = "Date"), header = TRUE)
 owid.filtered <- owid %>%
@@ -49,6 +53,48 @@ owid.filtered <- merge(owid.filtered, cfr.df, by = "location")
   rm(cfr.df)
 owid.countries <- owid.filtered %>%
                     filter(!is.na(continent)) #Removed all rows with NA for continent, leaving behind only countries. 
+
+#Filtering to get weekly averages for new cases and new deaths
+dates.covid.weekly <- seq(as.Date("2020-01-20"), as.Date("2021-07-04"), by=7) 
+
+owid.time.series.fxn <- function(country, t) {
+  df <- owid %>%
+  select(location, date, newcases = new_cases, newdeaths = new_deaths) %>%
+  filter(location==country) %>%
+  filter(date %in% (as.Date(t):(as.Date(t) + 6)))
+  df
+}
+
+owid.world.time.series.list <- purrr::pmap(list(rep("World", 76), dates.covid.weekly), owid.time.series.fxn) #Creates list of data frames, each corresponding to a particular week during lockdown. 
+owid.us.time.series.list <- purrr::pmap(list(rep("United States", 76), dates.covid.weekly), owid.time.series.fxn)
+
+covid.mean.fxn <- function(x, column, lab) {
+  df <- data.frame(owid.world.time.series.list[[x]])
+  mean <- mean(df[[column]], na.rm = T)
+  Date <- as.Date(dates.covid.weekly[[x]])
+  Week <- paste0(as.character(as.Date(dates.covid.weekly[[x]])), " to ", as.character(as.Date(dates.covid.weekly[[x]]) + 6)) 
+  col.lab <- as.character(paste0("Mean_Weekly_", lab))
+  df <- data.frame(Date, Week, mean) 
+  names(df)[3] <- as.character(paste0("Mean_Weekly_", lab))
+  df
+}
+
+x <- 1:76
+mean.newcases.df <- purrr::pmap_dfr(list(x, "newcases", "Cases"), covid.mean.fxn)
+mean.newdeaths.df <- purrr::pmap_dfr(list(x, "newdeaths", "Deaths"), covid.mean.fxn)
+
+covid.us.mean.fxn <- function(x, column, lab) {
+  df <- data.frame(owid.us.time.series.list[[x]])
+  mean <- mean(df[[column]], na.rm = T)
+  Date <- as.Date(dates.covid.weekly[[x]])
+  Week <- paste0(as.character(as.Date(dates.covid.weekly[[x]])), " to ", as.character(as.Date(dates.covid.weekly[[x]]) + 6)) 
+  col.lab <- as.character(paste0("Mean_Weekly_", lab))
+  df <- data.frame(Date, Week, mean) 
+  names(df)[3] <- as.character(paste0("Mean_Weekly_", lab))
+  df
+}
+
+mean.us.newcases.df <- purrr::pmap_dfr(list(x, "newcases", "Cases"), covid.us.mean.fxn)
 ```
 
 #### Creating mosaic of half-world raster files and reading in world satellite data. 
@@ -226,7 +272,7 @@ map +
   coord_equal() #Plot of population weighted NO2. 
 ```
 
-####Grouping data by median. 
+#### Grouping data by median. 
 ```{r, eval = TRUE}
 high.covid <- filter(weighted.covid.NO2.df, totcases.mil >= median(weighted.covid.NO2.df$totcases.mil, na.rm = T))
 low.covid <- filter(weighted.covid.NO2.df, totcases.mil < median(weighted.covid.NO2.df$totcases.mil, na.rm = T))
@@ -234,6 +280,7 @@ high.NO2 <- filter(weighted.covid.NO2.df, pop.weighted.NO2 >= median(weighted.co
 low.NO2 <- filter(weighted.covid.NO2.df, pop.weighted.NO2 < median(weighted.covid.NO2.df$pop.weighted.NO2, na.rm = T))
 ```
 
+***
 ### Exploratory Analysis of NO2 and COVID-19 variables. 
 #### Univariate analysis of world NO2 concentrations. 
 ```{r, eval = TRUE}
@@ -846,7 +893,7 @@ for (i in regions.list) {
 } #Loops function for continents of interest.
 ```
 
-####Analysis of high and low groups.
+#### Analysis of high and low groups.
 ```{r, eval = TRUE}
 high <- data.frame("group" = rep("high", length.out = nrow(high.covid)))
 high.covid <- cbind(high, high.covid)
@@ -1014,6 +1061,7 @@ summary.lm(NO2.lm.deaths)
 confint(NO2.lm.deaths) #Summary statistics for linear fit.
 ```
 
+***
 ### Correlation analysis: satellite vs. ground EPA. 
 #### Formatting sattelite and ground data (US only). 
 ```{r, eval = TRUE}
@@ -1046,7 +1094,7 @@ July_Oct2018.ground <- read.csv(file = './US_ground_NO2/July_Oct2018NO2.csv') %>
 July_Oct2018.ground <- data.frame(July_Oct2018.ground) #Final EPA data to use in comparison to satellite data. 
 
 #EPA data frame changed to raster format.
-July_Oct2018.ground.r <- July_Oct2018.ground %>% select(c("Longitude", "Latitude", "NO2_concentration")) %>% rasterFromXYZ() 
+July_Oct2018.ground.r <- July_Oct2018.ground %>% select(c("Longitude", "Latitude", "NO2_Concentration")) %>% rasterFromXYZ() 
 ```
 
 #### Checking for satellite data correlation to ground data (US only).
@@ -1096,12 +1144,12 @@ ggplot() +
 ```
 
 #### Formatting sattelite and ground data to be used for correlation analysis (China only). 
-```{r, eval = TRUE}
+```{r, eval = FALSE}
 #No success in retrieving data so far due to lack of shapefiles. 
 ```
 
 #### Reading in shapefiles for six cities analysis. 
-```{r, eval = TRUE}
+```{r, eval = FALSE}
 #Unsuccessful without ArcGIS access.
 london.shp <- st_read("six_cities_shapefiles/london/ESRI/London_Borough_Excluding_MHW.shp")  # Read shapefile as an sf object
 class(london.shp)
@@ -1282,18 +1330,26 @@ london.sat.weekly <- purrr::map2_dfr(x, y, london.sat.fxn)
 london.weekly.df <- rbind(london.sat.weekly,london.ground.weekly.df) 
 ```
 
+***
 ### Time analysis: NO2 and COVID changes during the COVID-19 pandemic.
 #### COVID time analysis: interrupted series time analysis plots.
-```{r, fig.width=20, fig.height=4, eval = TRUE}
-#Cases
-ggplot(mean.newcases.df, aes(x = Date, y = Mean_Weekly_Count)) +
-  geom_line(size = 0.75) + 
+```{r, fig.width=10, fig.height=5, eval = TRUE}
+time.series.theme <- function() {
   theme(legend.key.size = unit(1, 'cm'),
+        plot.title = element_text(size=22),
+        legend.position="right",
         legend.title = element_text(size=14),
         legend.text = element_text(size=10),
-        axis.title=element_text(size = 20),
-        axis.text.y=element_text(size=24),
-        axis.text.x=element_text(size=30,angle=90, hjust=1)) +
+        axis.title=element_text(size = 10),
+        axis.text.y=element_text(size=10),
+        axis.text.x=element_text(size=10,angle=90, hjust=1)) 
+}
+
+#Cases
+ggplot(mean.newcases.df, aes(x = Date, y = Mean_Weekly_Cases)) +
+  geom_line(size = 0.75) + 
+  theme_bw() +
+  time.series.theme() +
   ggtitle("World Weekly Averaged COVID Cases") +
   ylab("Number of Cases") +
   scale_x_date(date_labels = "%b",date_breaks = "1 month",expand=c(0,0),limits=c(as.Date("2020-01-20",format="%Y-%m-%d"),as.Date("2021-07-04",format="%Y-%m-%d"))) +
@@ -1301,29 +1357,24 @@ ylim(0, 840000) +
   
   #Pre-lockdown
   geom_rect(data=mean.newcases.df,aes(xmin=as.Date("2019-12-25",format="%Y-%m-%d"),xmax=as.Date("2020-01-23",format="%Y-%m-%d"),ymin=8.3E5,ymax=8.4E5),fill = "#c0c0c0",color = NA, alpha=0.02) +
-  geom_text(data=mean.newcases.df,aes(x=as.Date("2020-01-08"),y=8.35E5),label="Pre-Lockdown",color = "black", size = 1.5) +
+  geom_text(data=mean.newcases.df,aes(x=as.Date("2020-01-08"),y=8.35E5),label="Pre-Lockdown",color = "black", size = 3) +
   geom_vline(data=mean.newcases.df,xintercept = as.Date("2020-01-23",format="%Y-%m-%d"),linetype="dashed",colour="black",size=0.75,alpha=0.8) + 
   #Lockdown 1
   geom_rect(data=mean.newcases.df,aes(xmin=as.Date("2020-01-23",format="%Y-%m-%d"),xmax=as.Date("2020-07-01",format="%Y-%m-%d"),ymin=8.3E5,ymax=8.4E5),fill = "#fa9796",color = NA,alpha=0.02) +
-  geom_text(data=mean.newcases.df,aes(x=as.Date("2020-04-01"),y=8.35E5),label="Lockdown 1", color = "black", size = 1.5) +
+  geom_text(data=mean.newcases.df,aes(x=as.Date("2020-04-01"),y=8.35E5),label="Lockdown 1", color = "black", size = 3) +
   geom_vline(data=mean.newcases.df,xintercept=as.Date("2020-07-01",format="%Y-%m-%d"),linetype="dashed",colour="black",size=0.75,alpha=0.8) + 
   #Re-opening Green PHASE
   geom_rect(data=mean.newcases.df,aes(xmin=as.Date("2020-07-01",format="%Y-%m-%d"),xmax=as.Date("2021-07-04",format="%Y-%m-%d"),ymin=8.3E5,ymax=8.4E5),fill = "#b5dea5",color = NA,alpha=0.02) +
-  geom_text(data=mean.newcases.df,aes(x=as.Date("2020-09-15"),y=8.35E5),label="Re-Opening", color = "black", size = 1.5) +
-  theme_bw() + 
+  geom_text(data=mean.newcases.df,aes(x=as.Date("2020-09-15"),y=8.35E5),label="Re-Opening", color = "black", size = 3) +
   scale_alpha_manual(values = c(0.4, 1.1)) + 
   scale_color_manual(values = c("gray", "blue", "black")) +
   ggsave("covid_cases_timeseries.pdf")
 
 #Deaths
-ggplot(mean.newdeaths.df , aes(x = Date, y = Mean_Weekly_Count)) +
+ggplot(mean.newdeaths.df , aes(x = Date, y = Mean_Weekly_Deaths)) +
   geom_line(size = 0.75) + 
-  theme(legend.key.size = unit(1, 'cm'),
-        legend.title = element_text(size=14),
-        legend.text = element_text(size=10),
-        axis.title=element_text(size = 20),
-        axis.text.y=element_text(size=24),
-        axis.text.x=element_text(size=30,angle=90, hjust=1)) +
+  theme_bw() +
+  time.series.theme() +
   ggtitle("World Weekly Averaged COVID Deaths") +
   ylab("Number of Deaths") +
   scale_x_date(date_labels = "%b",date_breaks = "1 month",expand=c(0,0),limits=c(as.Date("2020-01-20",format="%Y-%m-%d"),as.Date("2021-07-04",format="%Y-%m-%d"))) +
@@ -1331,22 +1382,69 @@ ylim(0, 1.5E4) +
   
   #Pre-lockdown
   geom_rect(data=mean.newdeaths.df,aes(xmin=as.Date("2019-12-25",format="%Y-%m-%d"),xmax=as.Date("2020-01-23",format="%Y-%m-%d"),ymin=1.45E4,ymax=1.5E4),fill = "#c0c0c0",color = NA, alpha=0.02) +
-  geom_text(data=mean.newdeaths.df,aes(x=as.Date("2020-01-08"),y=1.475E4),label="Pre-Lockdown",color = "black", size = 1.5) +
+  geom_text(data=mean.newdeaths.df,aes(x=as.Date("2020-01-08"),y=1.475E4),label="Pre-Lockdown",color = "black", size = 3) +
   geom_vline(data=mean.newdeaths.df,xintercept = as.Date("2020-01-23",format="%Y-%m-%d"),linetype="dashed",colour="black",size=0.75,alpha=0.8) + 
   #Lockdown 1
   geom_rect(data=mean.newdeaths.df,aes(xmin=as.Date("2020-01-23",format="%Y-%m-%d"),xmax=as.Date("2020-07-01",format="%Y-%m-%d"),ymin=1.45E4,ymax=1.5E4),fill = "#fa9796",color = NA,alpha=0.02) +
-  geom_text(data=mean.newdeaths.df,aes(x=as.Date("2020-04-01"),y=1.475E4),label="Lockdown 1", color = "black", size = 1.5) +
+  geom_text(data=mean.newdeaths.df,aes(x=as.Date("2020-04-01"),y=1.475E4),label="Lockdown 1", color = "black", size = 3) +
   geom_vline(data=mean.newdeaths.df,xintercept=as.Date("2020-07-01",format="%Y-%m-%d"),linetype="dashed",colour="black",size=0.75,alpha=0.8) + 
   #Re-opening Green PHASE
   geom_rect(data=mean.newdeaths.df,aes(xmin=as.Date("2020-07-01",format="%Y-%m-%d"),xmax=as.Date("2021-07-04",format="%Y-%m-%d"),ymin=1.45E4,ymax=1.5E4),fill = "#b5dea5",color = NA,alpha=0.02) +
-  geom_text(data=mean.newdeaths.df,aes(x=as.Date("2020-09-15"),y=1.475E4),label="Re-Opening", color = "black", size = 1.5) +
-  theme_bw() + 
+  geom_text(data=mean.newdeaths.df,aes(x=as.Date("2020-09-15"),y=1.475E4),label="Re-Opening", color = "black", size = 3) +
   scale_alpha_manual(values = c(0.4, 1.1)) + 
   scale_color_manual(values = c("gray", "blue", "black")) +
   ggsave("covid_deaths_timeseries.pdf")
 ```
 
-####Urban areas only interrupted time series analysis.
+#### World Urban Rural gradient shapefiles
+```{r, eval = TRUE}
+#lockdown time https://en.wikipedia.org/wiki/COVID-19_lockdowns  
+#czechia 1st lockdown: 2020-03-16 -- 2020-04-12, second lockdown: 2020-10-22 -- 2021-03-28 
+#slovenia
+#sweden
+#uruguay
+#lithuania 1st lockdown: 2020-3-16 -- 2020-06-18, 2nd: 2020-11-07 -- 2020-11-28
+#united states
+#netherlands 1st: 2020-03-15 -- 2020-04-06, 2nd: 2020-12-15 -- 2021-03-02
+#estonia
+#argentina
+#israel 
+wrld_simpl[wrld_simpl$NAME == "Czechia", ]
+top.10.countries <- covid.NO2.df %>% filter(Area > 100) %>% arrange(desc(totcases.mil)) 
+top.10.countries <- list(top.10.countries$location[1:10])
+
+---
+world.urban.sp <- as(world.sf, Class = "Spatial")
+top.10.sp <- gIntersection(wrld_simpl[wrld_simpl$NAME == "United States", ], world.urban.sp)
+test <- st_as_sf(test)
+---
+rastlist.fxn <- function(location) {
+  list.files(path = paste0("time_analysis_2019_", location), pattern='.tif$', 
+all.files=TRUE, full.names=FALSE) 
+}
+top.10.urban.raster.list <- purrr:pmap(top.10.countries)
+
+
+top.10.urban.fxn <- function(location) {
+  country.sp <- gIntersection(wrld_simpl[wrld_simpl$NAME == location, ], world.urban.sp)
+  country.sf <- st_as_sf(country.sp)
+top.10.urban.list <- purrr:pmap(top.10.countries) 
+  r.vals <- exact_extract(r, country.sf, weights = 'area', 'mean') 
+  r.mean <- mean(r.vals, na.rm = TRUE)
+  final.df <- data.frame("NO2_Concentration" = r.mean)   
+  Location <- as.character(location)
+  Date <- as.factor(as.Date(dates.2019[[y]] %m+% years(1))) #Adds 1 year to date to match x axis of 2020 dates.
+  Week <- paste0(as.character(as.Date(dates.2019[[y]])), " to ", as.character(as.Date(dates.2019[[y]]) + 6)) 
+  Period <- rep(2019, length.out = nrow(final.df)) 
+  urban.2019.weekly <- cbind(final.df, Location, Period, Date, Week) 
+  urban.2019.weekly <- urban.2019.weekly %>% select(Location, Period, Date, Week, NO2_Concentration)
+}
+#list of rasters for each country with elements for each week 
+
+top.10.urban.list <- purrr:pmap(top.10.countries, ) #creates list of urban shapefiles for each country
+```
+
+#### Urban areas only interrupted time series analysis.
 ```{r, eval = FALSE}
 #Used code:
 #gsutil -m cp \
@@ -1448,22 +1546,18 @@ rm(urban.weekly.df)
 ```
 
 #### Urban areas time analysis: interrupted series time analysis plots.
-```{r, fig.width=20, fig.height=4, eval = TRUE}
+```{r, fig.width=10, fig.height=8, eval = TRUE}
 urban.weekly.df <- read.csv(file = 'time_series_csv/urban.weekly.NO2.csv') 
 urban.weekly.df$Date <- as.Date(urban.weekly.df$Date)
 urban.weekly.df$Period <- as.factor(urban.weekly.df$Period)
-max(urban.weekly.df$NO2_Concentration)
-ggplot(urban.weekly.df, aes(x = Date, y = NO2_Concentration, group = Period, color = Period)) +
+
+urban.plot <- ggplot(urban.weekly.df, aes(x = Date, y = NO2_Concentration, group = Period, color = Period)) +
   geom_line(size = 0.75) + 
-  theme(legend.key.size = unit(1, 'cm'),
-        legend.title = element_text(size=14),
-        legend.text = element_text(size=10),
-        axis.title=element_text(size = 20),
-        axis.text.y=element_text(size=24),
-        axis.text.x=element_text(size=30,angle=90, hjust=1)) +
+  theme_bw() + 
+  time.series.theme() +
   labs(fill = "Year of Measured Pollution") +
   ggtitle("Urban Areas NO2 in 2019 vs 2020") +
-  ylab("NO2 Concentration (mol/m^2)") +
+  ylab("NO2 Concentration \n(mol/m^2)") +
   scale_x_date(date_labels = "%b",date_breaks = "1 month",expand=c(0,0),limits=c(as.Date("2019-12-25",format="%Y-%m-%d"),as.Date("2020-12-31",format="%Y-%m-%d"))) +
 ylim(0, 3.3E-5) +
   
@@ -1478,19 +1572,74 @@ ylim(0, 3.3E-5) +
   #Re-opening Green PHASE
   geom_rect(data=urban.weekly.df,aes(xmin=as.Date("2020-07-01",format="%Y-%m-%d"),xmax=as.Date("2020-12-31",format="%Y-%m-%d"),ymin=3.25E-5,ymax=3.3E-5),fill = "#b5dea5",color = NA,alpha=0.02) +
   geom_text(data=urban.weekly.df,aes(x=as.Date("2020-09-15"),y=3.275E-5),label="Re-Opening", color = "black", size = 1.5) +
-  theme_bw() + 
   scale_alpha_manual(values = c(0.4, 1.1)) + 
   scale_color_manual(values = c("gray", "blue", "black")) +
   ggsave("urban_time_series.pdf")
 ```
 
-####Combining COVID time series data frame with NO2.
+#### Combining COVID time series data frame with NO2.
 ```{r, eval = TRUE}
 covid.weekly.df <- mean.newcases.df %>% inner_join(mean.newdeaths.df, by = c("Date", "Week"))
-total.weekly.df <- urban.weekly.df %>% left_join(covid.weekly.df, by = "Week")
+total.weekly.df <- urban.weekly.df %>% left_join(covid.weekly.df, by = c("Date", "Week"))
+
+#Cases
+mean.newcases.plot <- ggplot(total.weekly.df, aes(x = Date, y = Mean_Weekly_Cases, group = Period, color = Period)) +
+  geom_line(size = 0.75) + 
+  theme_bw() +
+  time.series.theme() +
+  ggtitle("World Weekly Averaged COVID Cases") +
+  ylab("Number of Cases") +
+  scale_x_date(date_labels = "%b",date_breaks = "1 month",expand=c(0,0),limits=c(as.Date("2019-12-25",format="%Y-%m-%d"),as.Date("2020-12-31",format="%Y-%m-%d"))) +
+ylim(0, 840000) +
+  
+  #Pre-lockdown
+  geom_rect(data=total.weekly.df,aes(xmin=as.Date("2019-12-25",format="%Y-%m-%d"),xmax=as.Date("2020-01-23",format="%Y-%m-%d"),ymin=8.3E5,ymax=8.4E5),fill = "#c0c0c0",color = NA, alpha=0.02) +
+  geom_text(data=total.weekly.df,aes(x=as.Date("2020-01-08"),y=8.35E5),label="Pre-Lockdown",color = "black", size = 1.5) +
+  geom_vline(data=total.weekly.df,xintercept = as.Date("2020-01-23",format="%Y-%m-%d"),linetype="dashed",colour="black",size=0.75,alpha=0.8) + 
+  #Lockdown 1
+  geom_rect(data=total.weekly.df,aes(xmin=as.Date("2020-01-23",format="%Y-%m-%d"),xmax=as.Date("2020-07-01",format="%Y-%m-%d"),ymin=8.3E5,ymax=8.4E5),fill = "#fa9796",color = NA,alpha=0.02) +
+  geom_text(data=total.weekly.df,aes(x=as.Date("2020-04-01"),y=8.35E5),label="Lockdown 1", color = "black", size = 1.5) +
+  geom_vline(data=total.weekly.df,xintercept=as.Date("2020-07-01",format="%Y-%m-%d"),linetype="dashed",colour="black",size=0.75,alpha=0.8) + 
+  #Re-opening Green PHASE
+  geom_rect(data=total.weekly.df,aes(xmin=as.Date("2020-07-01",format="%Y-%m-%d"),xmax=as.Date("2020-12-31",format="%Y-%m-%d"),ymin=8.3E5,ymax=8.4E5),fill = "#b5dea5",color = NA,alpha=0.02) +
+  geom_text(data=total.weekly.df,aes(x=as.Date("2020-09-15"),y=8.35E5),label="Re-Opening", color = "black", size = 1.5) +
+  scale_alpha_manual(values = c(0.4, 1.1)) + 
+  scale_color_manual(values = c("gray", "blue", "black"))
+
+#Deaths
+mean.newdeaths.plot <- ggplot(total.weekly.df , aes(x = Date, y = Mean_Weekly_Deaths, group = Period, color = Period)) +
+  geom_line(size = 0.75) + 
+  theme_bw() +
+  time.series.theme() +
+  ggtitle("World Weekly Averaged COVID Deaths") +
+  ylab("Number of Deaths") +
+  scale_x_date(date_labels = "%b",date_breaks = "1 month",expand=c(0,0),limits=c(as.Date("2019-12-25",format="%Y-%m-%d"),as.Date("2020-12-31",format="%Y-%m-%d"))) +
+ylim(0, 1.5E4) +
+  
+  #Pre-lockdown
+  geom_rect(data=total.weekly.df,aes(xmin=as.Date("2019-12-25",format="%Y-%m-%d"),xmax=as.Date("2020-01-23",format="%Y-%m-%d"),ymin=1.45E4,ymax=1.5E4),fill = "#c0c0c0",color = NA, alpha=0.02) +
+  geom_text(data=total.weekly.df,aes(x=as.Date("2020-01-08"),y=1.475E4),label="Pre-Lockdown",color = "black", size = 1.5) +
+  geom_vline(data=total.weekly.df,xintercept = as.Date("2020-01-23",format="%Y-%m-%d"),linetype="dashed",colour="black",size=0.75,alpha=0.8) + 
+  #Lockdown 1
+  geom_rect(data=total.weekly.df,aes(xmin=as.Date("2020-01-23",format="%Y-%m-%d"),xmax=as.Date("2020-07-01",format="%Y-%m-%d"),ymin=1.45E4,ymax=1.5E4),fill = "#fa9796",color = NA,alpha=0.02) +
+  geom_text(data=total.weekly.df,aes(x=as.Date("2020-04-01"),y=1.475E4),label="Lockdown 1", color = "black", size = 1.5) +
+  geom_vline(data=total.weekly.df,xintercept=as.Date("2020-07-01",format="%Y-%m-%d"),linetype="dashed",colour="black",size=0.75,alpha=0.8) + 
+  #Re-opening Green PHASE
+  geom_rect(data=total.weekly.df,aes(xmin=as.Date("2020-07-01",format="%Y-%m-%d"),xmax=as.Date("2020-12-31",format="%Y-%m-%d"),ymin=1.45E4,ymax=1.5E4),fill = "#b5dea5",color = NA,alpha=0.02) +
+  geom_text(data=total.weekly.df,aes(x=as.Date("2020-09-15"),y=1.475E4),label="Re-Opening", color = "black", size = 1.5) +
+  scale_alpha_manual(values = c(0.4, 1.1)) + 
+  scale_color_manual(values = c("gray", "blue", "black")) 
+
+NO2.vs.cases <- plot_grid(urban.plot, mean.newcases.plot, labels = c('A', 'B'), ncol = 1, align = "v") 
+ggsave("NO2_vs_cases.pdf", NO2.vs.cases)
+NO2.vs.cases 
+
+NO2.vs.deaths <- plot_grid(urban.plot, mean.newdeaths.plot, labels = c('A', 'B'), ncol = 1, align = "v") 
+ggsave("NO2_vs_deaths.pdf", NO2.vs.deaths)
+NO2.vs.deaths 
 ```
 
-####US urban areas only interrupted time series analysis. 
+#### US urban areas only interrupted time series analysis. 
 ```{r, eval = FALSE}
 us.urban.sf <- us.urban.sf %>% filter(UATYP10=="U")
 
@@ -1500,8 +1649,8 @@ us.rastlist.2019 <- list.files(path = "US_time_analysis_2019", pattern='.tif$',
 all.files=TRUE, full.names=FALSE)
 
 #Creates list of dates to call in function. 
-dates.2019 <- seq(as.Date("2018-12-31"), as.Date("2019-12-29"), by=7) #List of dates starting Dec 31 2018. 
- 
+dates.2019 <- seq(as.Date("2018-12-17"), as.Date("2019-12-29"), by=7) #List of dates starting Dec 31 2018. 
+
 #Function to make data frame for weekly average NO2 concentration. 
 raster.extract.fxn <- function(x, y) {
   r <- raster(paste0("US_time_analysis_2019/", x)) %>%
@@ -1515,7 +1664,7 @@ raster.extract.fxn <- function(x, y) {
   us.urban.2019.weekly <- cbind(final.df, Period, Date, Week) 
   us.urban.2019.weekly <- us.urban.2019.weekly %>% select(Period, Date, Week, NO2_Concentration)
 }
-  
+
 x <- as.list(us.rastlist.2019)
 y <- as.list(1:length(dates.2019))
 us.urban.2019.weekly.df <- purrr::pmap_dfr(list(x, y), raster.extract.fxn)
@@ -1526,8 +1675,8 @@ us.rastlist.2020 <- list.files(path = "US_time_analysis_2020", pattern='.tif$',
 all.files=TRUE, full.names=FALSE)
 
 #Creates list of dates to call in function. 
-dates.2020 <- seq(as.Date("2019-12-30"), as.Date("2021-01-03"), by=7) #List of dates starting Dec 30th 2019. 
-
+dates.2020 <- seq(as.Date("2019-12-16"), as.Date("2021-01-03"), by=7) #List of dates starting Dec 30th 2019. 
+dates.2020.mod <- seq(as.Date("2018-12-16"), as.Date("2018-12-29"), by = 7)
 #Function to make data frame for weekly average NO2 concentration. 
 raster.extract.fxn <- function(x, y) {
   r <- raster(paste0("US_time_analysis_2020/", x)) %>%
@@ -1552,28 +1701,24 @@ write.csv(us.urban.weekly.df, file = 'time_series_csv/us.urban.weekly.NO2.csv')
 rm(us.urban.weekly.df)
 ```
 
-####US urban areas only: interrupted time series analysis plots.
+#### US urban areas only: interrupted time series analysis plots.
 ```{r, eval = TRUE}
 us.urban.weekly.df <- read.csv(file = 'time_series_csv/us.urban.weekly.NO2.csv')
 us.urban.weekly.df$Date <- as.Date(us.urban.weekly.df$Date)
 us.urban.weekly.df$Period <- as.factor(us.urban.weekly.df$Period)
 
-ggplot(us.urban.weekly.df, aes(x = Date, y = NO2_Concentration, group = Period, color = Period)) +
+us.urban.plot <- ggplot(us.urban.weekly.df, aes(x = Date, y = NO2_Concentration, group = Period, color = Period)) +
   geom_line(size = 0.75) + 
-  theme(legend.key.size = unit(1, 'cm'),
-        legend.title = element_text(size=14),
-        legend.text = element_text(size=10),
-        axis.title=element_text(size = 20),
-        axis.text.y=element_text(size=24),
-        axis.text.x=element_text(size=30,angle=90, hjust=1)) +
+  theme_bw() +
+  time.series.theme() +
   labs(fill = "Year of Measured Pollution") +
   ggtitle("US Urban NO2 in 2019 vs 2020") +
   ylab("NO2 Concentration (mol/m^2)") +
-  scale_x_date(date_labels = "%b",date_breaks = "1 month",expand=c(0,0),limits=c(as.Date("2019-12-25",format="%Y-%m-%d"),as.Date("2020-12-31",format="%Y-%m-%d"))) +
+  scale_x_date(date_labels = "%b",date_breaks = "1 month",expand=c(0,0),limits=c(as.Date("2019-12-30",format="%Y-%m-%d"),as.Date("2020-12-31",format="%Y-%m-%d"))) +
 ylim(0, 4.6E-5) +
   
   #Pre-lockdown
-  geom_rect(data=us.urban.weekly.df,aes(xmin=as.Date("2019-12-25",format="%Y-%m-%d"),xmax=as.Date("2020-03-19",format="%Y-%m-%d"),ymin=4.55E-5,ymax=4.6E-5),fill = "#c0c0c0",color = NA, alpha=0.02) +
+  geom_rect(data=us.urban.weekly.df,aes(xmin=as.Date("2019-12-30",format="%Y-%m-%d"),xmax=as.Date("2020-03-19",format="%Y-%m-%d"),ymin=4.55E-5,ymax=4.6E-5),fill = "#c0c0c0",color = NA, alpha=0.02) +
   geom_text(data=us.urban.weekly.df,aes(x=as.Date("2020-02-07"),y=4.575E-5),label="Pre-Lockdown",color = "black", size = 2) +
   geom_vline(data=us.urban.weekly.df,xintercept = as.Date("2020-03-19",format="%Y-%m-%d"),linetype="dashed",colour="black",size=0.75,alpha=0.8) + 
   #Lockdown 1
@@ -1587,14 +1732,417 @@ ylim(0, 4.6E-5) +
   #Lockdown 2
   geom_rect(data=us.urban.weekly.df,aes(xmin=as.Date("2020-11-16",format="%Y-%m-%d"),xmax=as.Date("2020-12-31",format="%Y-%m-%d"), ymin=4.55E-5,ymax=4.6E-5),fill = "#fa9796",color = NA,alpha=0.02) +
   geom_text(data=us.urban.weekly.df,aes(x=as.Date("2020-12-10"),y=4.575E-5),label="Lockdown 2", color = "black", size = 2) +
-  theme_bw() + 
   scale_alpha_manual(values = c(0.4, 1.1)) + 
   scale_color_manual(values = c("gray", "blue", "black")) +
   ggsave("US_urban_time_series.pdf")
 ```
 
-#### US time analysis: interrupted series time analysis data preparation. 
+#### US rural areas only interrupted time series analysis. 
 ```{r, eval = FALSE}
+us.urban.sp <- as(us.urban.sf, Class = "Spatial")
+us.rural.sp <- gDifference(wrld_simpl[wrld_simpl$NAME == "United States", ], us.urban.sp)
+us.rural.sf <- st_as_sf(us.rural.sp)
+
+#2019 data. 
+#Creates list of dates to call in function. 
+dates.2019 <- seq(as.Date("2018-12-17"), as.Date("2019-12-29"), by=7) #List of dates starting Dec 31 2018. 
+ 
+#Function to make data frame for weekly average NO2 concentration. 
+raster.extract.fxn <- function(x, y) {
+  r <- raster(paste0("US_time_analysis_2019/", x)) %>%
+    flip(direction='y') 
+  r.vals <- exact_extract(r, us.rural.sf, weights = 'area', 'mean') 
+  r.mean <- mean(r.vals, na.rm = TRUE)
+  final.df <- data.frame("NO2_Concentration" = r.mean)   
+  Date <- as.factor(as.Date(dates.2019[[y]] %m+% years(1))) #Adds 1 year to date to match x axis of 2020 dates.
+  Week <- paste0(as.character(as.Date(dates.2019[[y]])), " to ", as.character(as.Date(dates.2019[[y]]) + 6)) 
+  Period <- rep(2019, length.out = nrow(final.df)) 
+  us.rural.2019.weekly <- cbind(final.df, Period, Date, Week) 
+  us.rural.2019.weekly <- us.rural.2019.weekly %>% select(Period, Date, Week, NO2_Concentration)
+}
+  
+x <- as.list(us.rastlist.2019)
+y <- as.list(1:length(dates.2019))
+us.rural.2019.weekly.df <- purrr::pmap_dfr(list(x, y), raster.extract.fxn)
+
+#2020 data.  
+#Creates list of dates to call in function. 
+dates.2020 <- seq(as.Date("2019-12-16"), as.Date("2021-01-03"), by=7) #List of dates starting Dec 30th 2019. 
+
+#Function to make data frame for weekly average NO2 concentration. 
+raster.extract.fxn <- function(x, y) {
+  r <- raster(paste0("US_time_analysis_2020/", x)) %>%
+    flip(direction='y') 
+  r.vals <- exact_extract(r, us.rural.sf, weights = 'area', 'mean') 
+  r.mean <- mean(r.vals, na.rm = TRUE)
+  final.df <- data.frame("NO2_Concentration" = r.mean)   
+  Date <- as.factor(as.Date(dates.2020[[y]]))  
+  Week <- paste0(as.character(as.Date(dates.2020[[y]])), " to ", as.character(as.Date(dates.2020[[y]]) + 6)) 
+  Period <- rep(2020, length.out = nrow(final.df)) 
+  us.rural.2020.weekly <- cbind(final.df, Period, Date, Week) 
+  us.rural.2020.weekly <- us.rural.2020.weekly %>% select(Period, Date, Week, NO2_Concentration)
+}
+
+x <- as.list(us.rastlist.2020)
+y <- as.list(1:length(dates.2020))
+us.rural.2020.weekly.df <- purrr::pmap_dfr(list(x, y), raster.extract.fxn) 
+us.rural.weekly.df <- rbind(us.rural.2019.weekly.df, us.rural.2020.weekly.df) 
+us.rural.weekly.df$Date <- as.Date(us.rural.weekly.df$Date)
+us.rural.weekly.df$Period <- as.factor(us.rural.weekly.df$Period)
+write.csv(us.rural.weekly.df, file = 'time_series_csv/us.rural.weekly.NO2.csv')
+rm(us.rural.weekly.df)
+```
+
+#### US rural areas only: interrupted time series analysis plots.
+```{r, eval = TRUE}
+us.rural.weekly.df <- read.csv(file = 'time_series_csv/us.rural.weekly.NO2.csv')
+us.rural.weekly.df$Date <- as.Date(us.rural.weekly.df$Date)
+us.rural.weekly.df$Period <- as.factor(us.rural.weekly.df$Period)
+
+us.rural.plot <- ggplot(us.rural.weekly.df, aes(x = Date, y = NO2_Concentration, group = Period, color = Period)) +
+  geom_line(size = 0.75) + 
+  theme_bw() +
+  time.series.theme() +
+  labs(fill = "Year of Measured Pollution") +
+  ggtitle("US Rural NO2 in 2019 vs 2020") +
+  ylab("NO2 Concentration (mol/m^2)") +
+  scale_x_date(date_labels = "%b",date_breaks = "1 month",expand=c(0,0),limits=c(as.Date("2019-12-30",format="%Y-%m-%d"),as.Date("2020-12-31",format="%Y-%m-%d"))) +
+ylim(0, 4.6E-5) +
+  
+  #Pre-lockdown
+  geom_rect(data=us.rural.weekly.df,aes(xmin=as.Date("2019-12-30",format="%Y-%m-%d"),xmax=as.Date("2020-03-19",format="%Y-%m-%d"),ymin=4.55E-5,ymax=4.6E-5),fill = "#c0c0c0",color = NA, alpha=0.02) +
+  geom_text(data=us.rural.weekly.df,aes(x=as.Date("2020-02-07"),y=4.575E-5),label="Pre-Lockdown",color = "black", size = 2) +
+  geom_vline(data=us.rural.weekly.df,xintercept = as.Date("2020-03-19",format="%Y-%m-%d"),linetype="dashed",colour="black",size=0.75,alpha=0.8) + 
+  #Lockdown 1
+  geom_rect(data=us.rural.weekly.df,aes(xmin=as.Date("2020-03-19",format="%Y-%m-%d"),xmax=as.Date("2020-06-05",format="%Y-%m-%d"),ymin=4.55E-5,ymax=4.6E-5),fill = "#fa9796",color = NA,alpha=0.02) +
+  geom_text(data=us.rural.weekly.df,aes(x=as.Date("2020-05-01"),y=4.575E-5),label="Lockdown 1", color = "black", size = 2) +
+  geom_vline(data=us.rural.weekly.df,xintercept=as.Date("2020-06-05",format="%Y-%m-%d"),linetype="dashed",colour="black",size=0.75,alpha=0.8) + 
+  #Re-opening Green PHASE
+  geom_rect(data=us.rural.weekly.df,aes(xmin=as.Date("2020-06-05",format="%Y-%m-%d"),xmax=as.Date("2020-11-16",format="%Y-%m-%d"), ymin=4.55E-5,ymax=4.6E-5),fill = "#b5dea5",color = NA,alpha=0.02) +
+  geom_text(data=us.rural.weekly.df,aes(x=as.Date("2020-08-15"),y=4.575E-5),label="Re-Opening", color = "black", size = 2) +
+  geom_vline(data=us.rural.weekly.df,xintercept=as.Date("2020-11-16",format="%Y-%m-%d"),linetype="dashed",colour="black",size=0.75,alpha=0.8) + 
+  #Lockdown 2
+  geom_rect(data=us.rural.weekly.df,aes(xmin=as.Date("2020-11-16",format="%Y-%m-%d"),xmax=as.Date("2020-12-31",format="%Y-%m-%d"), ymin=4.55E-5,ymax=4.6E-5),fill = "#fa9796",color = NA,alpha=0.02) +
+  geom_text(data=us.rural.weekly.df,aes(x=as.Date("2020-12-10"),y=4.575E-5),label="Lockdown 2", color = "black", size = 2) +
+  scale_alpha_manual(values = c(0.4, 1.1)) + 
+  scale_color_manual(values = c("gray", "blue", "black")) +
+  ggsave("US_rural_time_series.pdf")
+
+us.rural.vs.urban <- plot_grid(us.urban.plot, us.rural.plot, labels = c('A', 'B'), ncol = 1) 
+ggsave("US_rural_vs_urban.pdf", us.rural.vs.urban)
+us.rural.vs.urban 
+```
+
+#### US urban NO2 vs COVID cases. 
+```{r, eval = TRUE}
+us.total.weekly.df <- urban.weekly.df %>% left_join(mean.us.newcases.df, by = c("Date", "Week"))
+
+#Cases
+us.mean.newcases.plot <- ggplot(us.total.weekly.df, aes(x = Date, y = Mean_Weekly_Cases, group = Period, color = Period)) +
+  geom_line(size = 0.75) + 
+  theme_bw() +
+  time.series.theme() +
+  ggtitle("World Weekly Averaged COVID Cases") +
+  ylab("Number of Cases") +
+  scale_x_date(date_labels = "%b",date_breaks = "1 month",expand=c(0,0),limits=c(as.Date("2019-12-25",format="%Y-%m-%d"),as.Date("2020-12-31",format="%Y-%m-%d"))) +
+ylim(0, 230000) +
+  
+  #Pre-lockdown
+  geom_rect(data=us.total.weekly.df,aes(xmin=as.Date("2019-12-25",format="%Y-%m-%d"),xmax=as.Date("2020-03-19",format="%Y-%m-%d"),ymin=2.3E5,ymax=2.4E5),fill = "#c0c0c0",color = NA, alpha=0.02) +
+  geom_text(data=us.total.weekly.df,aes(x=as.Date("2020-02-07"),y=2.35E5),label="Pre-Lockdown",color = "black", size = 2) +
+  geom_vline(data=us.total.weekly.df,xintercept = as.Date("2020-03-19",format="%Y-%m-%d"),linetype="dashed",colour="black",size=0.75,alpha=0.8) + 
+  #Lockdown 1
+  geom_rect(data=us.total.weekly.df,aes(xmin=as.Date("2020-03-19",format="%Y-%m-%d"),xmax=as.Date("2020-06-05",format="%Y-%m-%d"),ymin=2.3E5,ymax=2.4E5),fill = "#fa9796",color = NA,alpha=0.02) +
+  geom_text(data=us.total.weekly.df,aes(x=as.Date("2020-05-01"),y=2.35E5),label="Lockdown 1", color = "black", size = 2) +
+  geom_vline(data=us.total.weekly.df,xintercept=as.Date("2020-06-05",format="%Y-%m-%d"),linetype="dashed",colour="black",size=0.75,alpha=0.8) + 
+  #Re-opening Green PHASE
+  geom_rect(data=us.total.weekly.df,aes(xmin=as.Date("2020-06-05",format="%Y-%m-%d"),xmax=as.Date("2020-11-16",format="%Y-%m-%d"), ymin=2.3E5,ymax=2.4E5),fill = "#b5dea5",color = NA,alpha=0.02) +
+  geom_text(data=us.total.weekly.df,aes(x=as.Date("2020-08-15"),y=2.35E5),label="Re-Opening", color = "black", size = 2) +
+  geom_vline(data=us.total.weekly.df,xintercept=as.Date("2020-11-16",format="%Y-%m-%d"),linetype="dashed",colour="black",size=0.75,alpha=0.8) + 
+  #Lockdown 2
+  geom_rect(data=us.total.weekly.df,aes(xmin=as.Date("2020-11-16",format="%Y-%m-%d"),xmax=as.Date("2020-12-31",format="%Y-%m-%d"), ymin=2.3E5,ymax=2.4E5),fill = "#fa9796",color = NA,alpha=0.02) +
+  geom_text(data=us.total.weekly.df,aes(x=as.Date("2020-12-10"),y=2.35E5),label="Lockdown 2", color = "black", size = 2) +
+  scale_alpha_manual(values = c(0.4, 1.1)) + 
+  scale_color_manual(values = c("gray", "blue", "black"))
+
+us.NO2.vs.cases <- plot_grid(us.urban.plot, us.mean.newcases.plot, labels = c('A', 'B'), ncol = 1, align = "v") 
+ggsave("US_NO2_vs_cases.pdf", us.NO2.vs.cases)
+us.NO2.vs.cases 
+```
+
+#### ITS analysis: US urban Jan-Dec. 
+```{r, eval = TRUE}
+# Install packages required for the analysis (uncomment if needed)
+#install.packages("lmtest") ; install.packages("Epi")
+#install.packages("tsModel"); install.packages("vcd")
+
+# load the packages
+library(foreign)
+library(tsModel) 
+library(lmtest) 
+library(Epi)
+library(splines) 
+library(vcd) 
+library(pander)
+
+col = c("#084594","#990000")
+
+# read data
+head(us.urban.weekly.df)
+
+#main plot
+year_scatter_plot <- function(data,ylim,xlockdown,pollutant,model){
+  datanew <- data.frame(pollution_estimate=mean(data$NO2_Concentration),covid_lockdown=rep(c(0,1,0,1),c(120,410,120,410)), no_of_weeks=c((1:530/10), (1:530/10)), year2020 = rep(c(0,1),c(530,530)))
+
+  # We generate predicted values based on the model in order to create a plot
+  # need to reconfirm the mean multiplier value ; using 10 for now
+  pred1 <- predict(model,type="response",datanew) #/mean(data$pollution_estimate)*10
+
+  #This can then be plotted along with a scatter graph (see above)
+  #plot for 2015-2019
+  data.2019 <- data %>% filter(., year2020 == 0) %>% select(., NO2_Concentration, no_of_weeks) 
+
+  plot(NO2_Concentration ~ no_of_weeks, data = data.2019,
+       type="n",ylim=c(00,ylim),xlab="Weeks", ylab=paste0(pollutant," estimates"),
+       bty="l")
+  rect(xlockdown,0,53,ylim,col=grey(0.9),border=F)
+  points(NO2_Concentration ~ no_of_weeks,data = data.2019,cex=0.7,pch=16,col=alpha(col[1],0.5))
+  legend(47, 0.5E-5, legend=c("2019", "2020"), col=alpha(col,0.5),pch=16,cex=0.7)
+  
+  #plot for 2020
+   data.2020 <- data %>% filter(., year2020 == 1) %>% select(., NO2_Concentration, no_of_weeks) 
+  par(new=TRUE)
+  plot(NO2_Concentration ~ no_of_weeks,data = data.2020, type="n",ylim=c(00,ylim),xlab="Weeks", ylab=paste0(pollutant," estimates"), bty="l")
+  points(NO2_Concentration ~ no_of_weeks,data = data.2020,cex=0.7,pch=16,col=alpha(col[2],0.5))
+  #Add prediction lines
+  lines(datanew$no_of_weeks[1:530],pred1[1:530],col=col[1],lwd = 1.5)
+  lines(datanew$no_of_weeks[531:1060],pred1[531:1060],col=col[2],lwd = 1.5)
+  #legend(91, 29.8, legend=c("2015-2019", "2020"), col=col,lty=1)
+  title(paste0(pollutant," for Jan to Dec 2020 vs 2015-19"))
+
+  # to plot the counterfactual scenario we create a data frame as if covid lockdown (the intervention) was never being implemented
+    datanew <- data.frame(pollution_estimate=mean(data$NO2_Concentration),covid_lockdown=0, no_of_weeks=c((1:530/10), (1:530/10)), year2020 = rep(c(0,1),c(530,530)))
+    
+  # generate predictions under the counterfactual scenario and add it to the plot
+  pred1b <- predict(model,datanew,type="response") #/mean(data$pollution_estimate)*10
+  lines(datanew$no_of_weeks[1:530],pred1b[1:530],lty=2,col=col[1],lwd = 1.5)
+  lines(datanew$no_of_weeks[531:1060],pred1b[531:1060],col=col[2],lty=2,lwd = 1.5)
+}
+
+#Data for NO2
+data.NO2.19 <- us.urban.weekly.df %>%
+            dplyr::filter(Period == 2019) %>%
+            dplyr::mutate(covid_lockdown = rep(c(0,1),c(12,40)),year2020 = 0,no_of_weeks = 1:52) 
+
+data.NO2.19[nrow(data.NO2.19)+1,] <- NA
+data.NO2.19[53,8] = 53
+data.NO2.19[53,6] = 1
+data.NO2.19[53,7] = 0
+
+data.NO2.20 <- us.urban.weekly.df %>%
+            dplyr::filter(Period == 2020) %>%
+            dplyr::mutate(covid_lockdown = rep(c(0,1),c(12,41)),year2020 = 1,no_of_weeks = seq(1:53))
+          
+
+data.NO2 <- rbind(data.NO2.19,data.NO2.20)
+#data.NO2$no_of_weeks <- seq(1:nrow(data.NO2))
+
+#tabulate pollution before and after lockdown
+summary(data.NO2)
+summary(data.NO2$NO2_Concentration[data.NO2$covid_lockdown==0])
+summary(data.NO2$NO2_Concentration[data.NO2$covid_lockdown==1])
+
+#OLS regression
+year.model.us.urban <- lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020 +  harmonic(no_of_weeks,2,52), data=data.NO2) 
+#year.model.us.urban <- lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020, data=data.NO2) 
+summary(year.model.us.urban)
+
+#plot
+year_scatter_plot(data.NO2,ylim=5E-5, xlockdown=12,pollutant="NO2",model=year.model.us.urban)
+```
+
+#### ITS analysis: US urban Dec-June
+```{r, eval = TRUE}
+# Install packages required for the analysis (uncomment if needed)
+#install.packages("lmtest") ; install.packages("Epi")
+#install.packages("tsModel"); install.packages("vcd")
+
+# load the packages
+library(foreign)
+library(tsModel) 
+library(lmtest) 
+library(Epi)
+library(splines) 
+library(vcd) 
+library(pander)
+
+col = c("#084594","#990000")
+
+# read data
+head(us.urban.weekly.df)
+
+#Data for NO2
+data.NO2.19 <- us.urban.weekly.df %>%
+            dplyr::filter(Period == 2019) 
+data.NO2.19 <- data.NO2.19[data.NO2.19$Date >= "2019-12-17" & data.NO2.19$Date <= "2020-06-10", ] %>%
+  dplyr::mutate(covid_lockdown =  rep(c(0,1),c(13,13)),year2020 = 0,no_of_weeks = 1:26) 
+data.NO2.19[nrow(data.NO2.19)+1,] <- NA
+data.NO2.19[27,8] = 27
+data.NO2.19[27,6] = 1
+data.NO2.19[27,7] = 0
+
+data.NO2.20 <- us.urban.weekly.df %>%
+            dplyr::filter(Period == 2020) 
+data.NO2.20 <- data.NO2.20[data.NO2.20$Date >= "2019-12-16" & data.NO2.20$Date <= "2020-06-15", ] %>%
+    dplyr::mutate(covid_lockdown = rep(c(0,1),c(13,14)),year2020 = 1,no_of_weeks = seq(1:27))
+
+data.NO2 <- rbind(data.NO2.19,data.NO2.20)
+#data.NO2$no_of_weeks <- seq(1:nrow(data.NO2))
+
+#ggplot2
+scatter_gplot <- function(data,ylim, xintercept,location){
+  #convert year to factor 
+  data$year2020 <- as.factor(data$year2020)
+
+  #plot
+  ggplot(data, aes(y=NO2_Concentration,x=no_of_weeks,colour=year2020)) + 
+  geom_point(size=2) + 
+  scale_color_manual(values=col) + 
+  #add line to denote lockdown
+  geom_vline(xintercept=xintercept, linetype="twodash",colour="darkred",size=1.4) +
+  ylim(0,ylim) +
+  labs(x="Weeks", y=paste(location,"NO2 estimates in 2019 vs 2020"),colour = "Year2020") + 
+  theme_bw() +
+  theme(legend.title = element_text(size=9)) 
+}
+scatter_gplot(data.NO2, 5E-5, 13, "Urban U.S.")
+
+#main plot
+period_scatter_plot <- function(data,ylim,xlockdown,location,model){
+    datanew <- data.frame(NO2_Concentration=mean(data$NO2_Concentration),covid_lockdown=rep(c(0,1,0,1),c(130,140,130,140)), no_of_weeks=c((1:270/10), (1:270/10)), year2020 = rep(c(0,1),c(270, 270)))
+
+  # We generate predicted values based on the model in order to create a plot
+  # need to reconfirm the mean multiplier value ; using 10 for now
+  pred1 <- predict(model,datanew, type="response") #/mean(data$pollution_estimate)*10
+
+  #This can then be plotted along with a scatter graph (see above)
+  #plot for 2015-2019
+  data.2019 <- data %>% filter(., year2020 == 0) %>% select(., NO2_Concentration, no_of_weeks) 
+
+  plot(NO2_Concentration ~ no_of_weeks, data = data.2019,
+       type="n",ylim=c(00,ylim),xlab="Weeks", ylab=paste0("NO2 estimates"),
+       bty="l")
+  rect(xlockdown,0,27,ylim,col=grey(0.9),border=F)
+  points(NO2_Concentration ~ no_of_weeks,data = data.2019,cex=0.7,pch=16,col=alpha(col[1],0.5))
+  legend(19, 0.5E-5, legend=c("2019", "2020"), col=alpha(col,0.5),pch=16,cex=0.7)
+  
+  #plot for 2020
+   data.2020 <- data %>% filter(., year2020 == 1) %>% select(., NO2_Concentration, no_of_weeks) 
+  par(new=TRUE)
+  plot(NO2_Concentration ~ no_of_weeks,data = data.2020, type="n",ylim=c(00,ylim),xlab="Weeks", ylab=paste0("NO2 estimates"), bty="l")
+  points(NO2_Concentration ~ no_of_weeks,data = data.2020,cex=0.7,pch=16,col=alpha(col[2],0.5))
+  #Add prediction lines
+  lines(datanew$no_of_weeks[1:270],pred1[1:270],col=col[1],lwd = 1.5) #regular model, 2019
+  lines(datanew$no_of_weeks[271:540],pred1[271:540],col=col[2],lwd = 1.5) #regular model, 2020
+  #legend(91, 29.8, legend=c("2015-2019", "2020"), col=col,lty=1)
+  title(paste(location,"NO2, 19th Dec to 19th June 2020 vs 2019"))
+
+  # to plot the counterfactual scenario we create a data frame as if covid lockdown (the intervention) was never being implemented
+    datanew.ctr <- data.frame(NO2_Concentration=mean(data$NO2_Concentration),covid_lockdown=0, no_of_weeks=c((1:270/10), (1:270/10)), year2020 = rep(c(0,1),c(270, 270)))
+
+  # generate predictions under the counterfactual scenario and add it to the plot
+  pred1b <- predict(model,datanew.ctr, type="response") #/mean(data$pollution_estimate)*10
+   
+  lines(datanew.ctr$no_of_weeks[1:270],pred1b[1:270],col=col[1],lty=2,lwd = 1.5)
+  lines(datanew.ctr$no_of_weeks[271:540],pred1b[271:540],col=col[2],lty=2,lwd = 1.5)
+}
+
+#tabulate pollution before and after lockdown
+summary(data.NO2)
+summary(data.NO2$NO2_Concentration[data.NO2$covid_lockdown==0])
+summary(data.NO2$NO2_Concentration[data.NO2$covid_lockdown==1])
+
+#OLS regression
+#period.model.us.urban <- lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020 +  harmonic(no_of_weeks,2,52), data=data.NO2) 
+period.model.us.urban <- lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020, data=data.NO2) 
+summary(period.model.us.urban)
+
+#plot
+period_scatter_plot(data.NO2,ylim=5E-5, xlockdown=13,location="Urban U.S.",model=period.model.us.urban)
+```
+
+#### ITS analysis: US rural Jan-Dec. 
+```{r, eval = TRUE}
+#Data for NO2
+rural.data.NO2.19 <- us.rural.weekly.df %>%
+            dplyr::filter(Period == 2019) %>%
+            dplyr::mutate(covid_lockdown = 0,year2020 = 0,no_of_weeks = 1:52) 
+
+rural.data.NO2.19[nrow(rural.data.NO2.19)+1,] <- NA
+rural.data.NO2.19[53,8] = 53
+rural.data.NO2.19[53,7] = 0
+
+rural.data.NO2.20 <- us.rural.weekly.df %>%
+            dplyr::filter(Period == 2020) %>%
+            dplyr::mutate(covid_lockdown = rep(c(0,1),c(12,41)),year2020 = 1,no_of_weeks = seq(1:53))
+          
+
+rural.data.NO2 <- rbind(rural.data.NO2.19,rural.data.NO2.20)
+#data.NO2$no_of_weeks <- seq(1:nrow(data.NO2))
+
+#tabulate pollution before and after lockdown
+summary(rural.data.NO2)
+summary(rural.data.NO2$NO2_Concentration[rural.data.NO2$covid_lockdown==0])
+summary(rural.data.NO2$NO2_Concentration[rural.data.NO2$covid_lockdown==1])
+
+#OLS regression
+year.model.us.rural <- lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020 +  harmonic(no_of_weeks,2,52), data=rural.data.NO2) 
+#year.model.us.rural <- lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020, data=rural.data.NO2) 
+summary(year.model.us.rural)
+
+#plot
+year_scatter_plot(rural.data.NO2,ylim=5E-5, xlockdown=12,location="Rural U.S.",model=year.model.us.rural)
+```
+
+### ITS analysis: US rural Dec-June
+```{r, eval = TRUE}
+scatter_gplot(rural.data.NO2, 5E-5, 13, "Rural U.S.")
+
+#Data for NO2
+rural.data.NO2.19 <- us.rural.weekly.df %>%
+            dplyr::filter(Period == 2019) 
+rural.data.NO2.19 <- rural.data.NO2.19[rural.data.NO2.19$Date >= "2019-12-17" & rural.data.NO2.19$Date <= "2020-06-10", ] %>%
+  dplyr::mutate(covid_lockdown =  rep(c(0,1),c(13,13)),year2020 = 0,no_of_weeks = 1:26) 
+rural.data.NO2.19[nrow(rural.data.NO2.19)+1,] <- NA
+rural.data.NO2.19[27,8] = 27
+rural.data.NO2.19[27,6] = 1
+rural.data.NO2.19[27,7] = 0
+
+rural.data.NO2.20 <- us.rural.weekly.df %>%
+            dplyr::filter(Period == 2020) 
+rural.data.NO2.20 <- rural.data.NO2.20[rural.data.NO2.20$Date >= "2019-12-16" & rural.data.NO2.20$Date <= "2020-06-15", ] %>%
+    dplyr::mutate(covid_lockdown = rep(c(0,1),c(13,14)),year2020 = 1,no_of_weeks = seq(1:27))
+          
+
+rural.data.NO2 <- rbind(rural.data.NO2.19,rural.data.NO2.20)
+#data.NO2$no_of_weeks <- seq(1:nrow(data.NO2))
+
+#tabulate pollution before and after lockdown
+summary(rural.data.NO2)
+summary(rural.data.NO2$NO2_Concentration[rural.data.NO2$covid_lockdown==0])
+summary(rural.data.NO2$NO2_Concentration[rural.data.NO2$covid_lockdown==1])
+
+#OLS regression
+#period.model.us.rural <- lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020 +  harmonic(no_of_weeks,2,52), data=data.NO2) 
+period.model.us.rural <- lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020, data=rural.data.NO2) 
+summary(period.model.us.rural)
+
+#plot
+period_scatter_plot(rural.data.NO2,ylim=5E-5, xlockdown=13,location="Rural U.S.",model=period.model.us.rural)
+```
+
+#### US time analysis: interrupted series time analysis data preparation. 
+```{r, fig.width=10, fig.height=8, eval = TRUE}
 #Use function in other NO2_Exploratory Analysis to filter out each week from Jan-Dec 2019 and Jan-Dec 2020 for comparison.
 
 #Used code:
@@ -1604,9 +2152,8 @@ ylim(0, 4.6E-5) +
 
 # in terminal to copy all files from google cloud storage into folders in working directory. 
 
-#2019 data. 
-#Creates list of raster files from folder to call in function. 
-rastlist.2019 <- list.files(path = "US_time_analysis_2019", pattern='.tif$', 
+#2019 data.
+us.rastlist.2019 <- list.files(path = "US_time_analysis_2019", pattern='.tif$', 
 all.files=TRUE, full.names=FALSE)
 
 #Creates list of dates to call in function. 
@@ -1627,13 +2174,12 @@ raster.extract.fxn <- function(x, y) {
   US.2019.weekly <- US.2019.weekly %>% select(Period, Date, Week, NO2_Concentration)
 }
 
-x <- rastlist.2019
+x <- us.rastlist.2019
 y <- 1:length(dates.2019)
 US.2019.weekly.df <- purrr::map2_dfr(x, y, raster.extract.fxn) 
 
 #2020 data.  
-#Creates list of raster files from folder to call in function. 
-rastlist.2020 <- list.files(path = "US_time_analysis_2020", pattern='.tif$', 
+us.rastlist.2020 <- list.files(path = "US_time_analysis_2020", pattern='.tif$', 
 all.files=TRUE, full.names=FALSE)
 
 #Creates list of dates to call in function. 
@@ -1654,7 +2200,7 @@ raster.extract.fxn <- function(x, y) {
   US.2020.weekly <- US.2020.weekly %>% select(Period, Date, Week, NO2_Concentration)
 }
 
-x <- rastlist.2020
+x <- us.rastlist.2020
 y <- 1:length(dates.2020)
 US.2020.weekly.df <- purrr::map2_dfr(x, y, raster.extract.fxn) 
 US.weekly.df <- rbind(US.2019.weekly.df, US.2020.weekly.df) 
@@ -1665,19 +2211,15 @@ rm(US.weekly.df)
 ```
 
 #### US time analysis: interrupted series time analysis plots.
-```{r, fig.width=20, fig.height=4, eval = TRUE}
+```{r, fig.width=10, fig.height=8, eval = TRUE}
 us.weekly.df <- read.csv(file = 'time_series_csv/us.weekly.NO2.csv')
 us.weekly.df$Date <- as.Date(us.weekly.df$Date)
 us.weekly.df$Period <- as.factor(us.weekly.df$Period)
 
 ggplot(us.weekly.df, aes(x = Date, y = NO2_Concentration, group = Period, color = Period)) +
   geom_line(size = 0.75) + 
-  theme(legend.key.size = unit(1, 'cm'),
-        legend.title = element_text(size=14),
-        legend.text = element_text(size=10),
-        axis.title=element_text(size = 20),
-        axis.text.y=element_text(size=24),
-        axis.text.x=element_text(size=30,angle=90, hjust=1)) +
+  theme_bw() +
+  time.series.theme() +
   labs(fill = "Year of Measured Pollution") +
   ggtitle("US NO2 in 2019 vs 2020") +
   ylab("NO2 Concentration (mol/m^2)") +
@@ -1699,7 +2241,6 @@ ylim(0, 3E-5) +
   #Lockdown 2
   geom_rect(data=us.weekly.df,aes(xmin=as.Date("2020-11-16",format="%Y-%m-%d"),xmax=as.Date("2020-12-31",format="%Y-%m-%d"), ymin=2.95E-5,ymax=3E-5),fill = "#fa9796",color = NA,alpha=0.02) +
   geom_text(data=us.weekly.df,aes(x=as.Date("2020-12-10"),y=2.975E-5),label="Lockdown 2", color = "black", size = 2) +
-  theme_bw() + 
   scale_alpha_manual(values = c(0.4, 1.1)) + 
   scale_color_manual(values = c("gray", "blue", "black")) +
   ggsave("US_time_series.pdf")
@@ -1718,7 +2259,7 @@ ylim(0, 3E-5) +
 
 #2019 data. 
 #Creates list of raster files from folder to call in function. 
-rastlist.2019 <- list.files(path = "China_time_analysis_2019", pattern='.tif$', 
+china.rastlist.2019 <- list.files(path = "China_time_analysis_2019", pattern='.tif$', 
 all.files=TRUE, full.names=FALSE)
 
 #Creates list of dates to call in function. 
@@ -1739,13 +2280,13 @@ raster.extract.fxn <- function(x, y) {
   China.2019.weekly <- China.2019.weekly %>% select(Period, Date, Week, NO2_Concentration)
 }
 
-x <- rastlist.2019
+x <- china.rastlist.2019
 y <- 1:length(dates.2019)
 China.2019.weekly.df <- purrr::map2_dfr(x, y, raster.extract.fxn) 
 
 #2020 data.  
 #Creates list of raster files from folder to call in function. 
-rastlist.2020 <- list.files(path = "China_time_analysis_2020", pattern='.tif$', 
+china.rastlist.2020 <- list.files(path = "China_time_analysis_2020", pattern='.tif$', 
 all.files=TRUE, full.names=FALSE)
 
 #Creates list of dates to call in function. 
@@ -1766,7 +2307,7 @@ raster.extract.fxn <- function(x, y) {
   China.2020.weekly <- China.2020.weekly %>% select(Period, Date, Week, NO2_Concentration)
 }
 
-x <- rastlist.2020
+x <- china.rastlist.2020
 y <- 1:length(dates.2020)
 China.2020.weekly.df <- purrr::map2_dfr(x, y, raster.extract.fxn) 
 China.weekly.df <- rbind(China.2019.weekly.df, China.2020.weekly.df) 
@@ -1778,7 +2319,7 @@ rm(China.weekly.df)
 ```
 
 #### China time analysis: interrupted series time analysis plots.
-```{r, fig.width=20, fig.height=4, eval = TRUE}
+```{r, fig.width=10, fig.height=8, eval = TRUE}
 china.weekly.df <- read.csv(file = 'time_series_csv/china.weekly.NO2.csv')
 china.weekly.df$Date <- as.Date(china.weekly.df$Date)
 china.weekly.df$Period <- as.factor(china.weekly.df$Period)
@@ -1791,12 +2332,7 @@ ggplot(china.weekly.df, aes(x = Date, y = NO2_Concentration, group = Period, col
   scale_x_date(date_labels = "%b-%Y",date_breaks = "1 month",limits=c(as.Date("2019-11-01",format="%Y-%m-%d"),as.Date("2020-11-10",format="%Y-%m-%d"))) +
 ylim(0,6E-5) +
   theme_bw() +
-  theme(legend.key.size = unit(1, 'cm'),
-        legend.title = element_text(size=12),
-        legend.text = element_text(size=10),
-        axis.title = element_text(size = 10),
-        axis.text.x = element_text(size=10, angle=45, hjust=1),
-        axis.text.y = element_text(size=10)) +
+  time.series.theme() +
 
   #Pre-lockdown
   geom_rect(data=china.weekly.df,aes(xmin=as.Date("2019-11-01",format="%Y-%m-%d"),xmax=as.Date("2020-01-23",format="%Y-%m-%d"),ymin=5.9E-5,ymax=6E-5),fill = "#c0c0c0",color = NA, alpha=0.02) +

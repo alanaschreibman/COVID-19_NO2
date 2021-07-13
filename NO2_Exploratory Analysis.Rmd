@@ -234,14 +234,14 @@ China.date.fxn("2021-01-23", "2021-03-23")
 
 #Time series weekly analysis: test code with US. 
 #Weeks defined Mondays-Sundays starting on Dec 31st 2018. 
-dates.2019 <- seq(as.Date("2018-12-31"), as.Date("2019-12-29"), by=7) #List of dates starting Dec 31 2018. 
+dates.2019 <- seq(as.Date("2018-12-17"), as.Date("2019-12-29"), by=7) #List of dates starting Dec 31 2018. 
 
 for (i in 1:length(dates.2019)) {
   US.date.fxn(as.character(as.Date(dates.2019[[i]])), as.character(as.Date(dates.2019[[i]]) + 6))
 }  #Loops over all weeks of the year 2019. 
 
 #Weeks defined Mondays-Sundays starting on Dec 30th 2019. 
-dates.2020 <- seq(as.Date("2019-12-30"), as.Date("2021-01-03"), by=7) #List of dates starting Dec 30th 2019. 
+dates.2020 <- seq(as.Date("2019-12-16"), as.Date("2021-01-03"), by=7) #List of dates starting Dec 30th 2019. 
 
 for (i in 1:length(dates.2020)) {
   US.date.fxn(as.character(as.Date(dates.2020[[i]])), as.character(as.Date(dates.2020[[i]]) + 6))
@@ -270,6 +270,17 @@ for (i in 1:length(dates.2020)) {
 }
 for (i in 1:length(dates.2020)) {
 countries.NO2.fxn(as.character(as.Date(dates.2020[[i]])), as.character(as.Date(dates.2020[[i]]) + 6), 0, -90, 180, 90, "Right_Half_World")
+}
+
+#ITS analysis: top 10 countries
+dates.2019 <- seq(as.Date("2018-12-03"), as.Date("2020-01-05"), by=7) #List of dates starting Dec 31 2018. 
+for (i in 1:length(dates.2019)) {
+  countries.NO2.fxn(as.character(as.Date(dates.2019[[i]])), as.character(as.Date(dates.2019[[i]]) + 6), 12, 48, 19, 52, "Czechia")
+}
+
+dates.2020 <- seq(as.Date("2019-12-02"), as.Date("2021-01-03"), by=7) #List of dates starting Dec 30th 2019. 
+for (i in 1:length(dates.2020)) {
+countries.NO2.fxn(as.character(as.Date(dates.2020[[i]])), as.character(as.Date(dates.2020[[i]]) + 6), 12, 48, 19, 52, "Czechia")
 }
 ```
 
