@@ -209,9 +209,7 @@ for (i in 1:length(dates.2020)) {
   countries.NO2.fxn(as.character(as.Date(dates.2020[[i]])), as.character(as.Date(dates.2020[[i]]) + 6), 27, -30, 29, -25, "Johannesburg")
 } 
 
-
 #Time analysis: Go by first day of first lockdown order -> two months later. Then find time period of equivalent two-month length, starting before the lockdown. Apply this first to 2019, then 2020, then 2021. 
-
 #United States: California on March 19th. 
 US.date.fxn("2019-01-19", "2019-03-19") 
 US.date.fxn("2019-03-19", "2019-05-19") 
@@ -232,32 +230,6 @@ China.date.fxn("2020-01-23", "2020-03-23")
 China.date.fxn("2020-11-23", "2021-01-23")
 China.date.fxn("2021-01-23", "2021-03-23")
 
-#Time series weekly analysis: test code with US. 
-#Weeks defined Mondays-Sundays starting on Dec 31st 2018. 
-dates.2019 <- seq(as.Date("2018-12-17"), as.Date("2019-12-29"), by=7) #List of dates starting Dec 31 2018. 
-
-for (i in 1:length(dates.2019)) {
-  US.date.fxn(as.character(as.Date(dates.2019[[i]])), as.character(as.Date(dates.2019[[i]]) + 6))
-}  #Loops over all weeks of the year 2019. 
-
-#Weeks defined Mondays-Sundays starting on Dec 30th 2019. 
-dates.2020 <- seq(as.Date("2019-12-16"), as.Date("2021-01-03"), by=7) #List of dates starting Dec 30th 2019. 
-
-for (i in 1:length(dates.2020)) {
-  US.date.fxn(as.character(as.Date(dates.2020[[i]])), as.character(as.Date(dates.2020[[i]]) + 6))
-} #Loops over all weeks of the year 2020. 
-
-#Time series weekly analysis: test code with China 
-#Weeks defined Mondays-Sundays starting on Nov 5th 2018. 
-dates.2019 <- seq(as.Date("2018-11-05"), as.Date("2019-11-10"), by=7) #List of dates starting Dec 31 2018. 
-for (i in 1:length(dates.2019)) {
-  China.date.fxn(as.character(as.Date(dates.2019[[i]])), as.character(as.Date(dates.2019[[i]]) + 6))
-}  #Loops over all weeks of the year 2019.
-
-#Weeks defined Mondays-Sundays starting on Dec 30th 2019. 
-dates.2020 <- seq(as.Date("2019-11-04"), as.Date("2020-11-08"), by=7) #List of dates starting Dec 30th 2019. 
-
-
 #Time series weekly analysis: years 2019 and 2020 for right and left halves of the world. 
 for (i in 1:length(dates.2019)) {
   countries.NO2.fxn(as.character(as.Date(dates.2019[[i]])), as.character(as.Date(dates.2019[[i]]) + 6), -180, -90, 0, 90, "Left_Half_World")
@@ -273,14 +245,143 @@ countries.NO2.fxn(as.character(as.Date(dates.2020[[i]])), as.character(as.Date(d
 }
 
 #ITS analysis: top 10 countries
-dates.2019 <- seq(as.Date("2018-12-03"), as.Date("2020-01-05"), by=7) #List of dates starting Dec 31 2018. 
+dates.2019 <- seq(as.Date("2018-12-03"), as.Date("2020-01-05"), by=7) #List of dates starting Dec 3 2018. 
+d1 <- seq(as.Date("2019-12-03"), as.Date("2020-02-24"), by=7) #List of dates starting Dec 2 2019. 
+d2 <- seq(as.Date("2020-02-25"), as.Date("2020-03-03"), by=8) 
+d3 <- seq(as.Date("2020-03-04"), as.Date("2021-01-05"), by=7) 
+dates.2020 <- c(d1, d2, d3)
+
+#Czechia
+dates.2019 <- seq(as.Date("2018-12-01"), as.Date("2020-01-03"), by=7) #List of dates starting Dec 3 2018. 
 for (i in 1:length(dates.2019)) {
   countries.NO2.fxn(as.character(as.Date(dates.2019[[i]])), as.character(as.Date(dates.2019[[i]]) + 6), 12, 48, 19, 52, "Czechia")
 }
-
-dates.2020 <- seq(as.Date("2019-12-02"), as.Date("2021-01-03"), by=7) #List of dates starting Dec 30th 2019. 
+d1 <- seq(as.Date("2019-12-01"), as.Date("2020-02-22"), by=7) #List of dates starting Dec 2 2019. 
+d2 <- seq(as.Date("2020-02-23"), as.Date("2020-03-01"), by=8) 
+d3 <- seq(as.Date("2020-03-02"), as.Date("2021-01-03"), by=7) 
+dates.2020 <- c(d1, d2, d3)
 for (i in 1:length(dates.2020)) {
-countries.NO2.fxn(as.character(as.Date(dates.2020[[i]])), as.character(as.Date(dates.2020[[i]]) + 6), 12, 48, 19, 52, "Czechia")
+  countries.NO2.fxn(as.character(as.Date(dates.2020[[i]])), as.character(as.Date(dates.2020[[i]]) + 6), 12, 48, 19, 52, "Czechia")
+}
+#Slovenia
+dates.2019 <- seq(as.Date("2018-12-01"), as.Date("2020-01-03"), by=7) #List of dates starting Dec 3 2018. 
+for (i in 1:length(dates.2019)) {
+  countries.NO2.fxn(as.character(as.Date(dates.2019[[i]])), as.character(as.Date(dates.2019[[i]]) + 6), 13, 45, 17, 47, "Slovenia")
+}
+d1 <- seq(as.Date("2019-12-01"), as.Date("2020-02-22"), by=7) #List of dates starting Dec 2 2019. 
+d2 <- seq(as.Date("2020-02-23"), as.Date("2020-03-01"), by=8) 
+d3 <- seq(as.Date("2020-03-02"), as.Date("2021-01-03"), by=7) 
+dates.2020 <- c(d1, d2, d3)
+for (i in 1:length(dates.2020)) {
+  countries.NO2.fxn(as.character(as.Date(dates.2020[[i]])), as.character(as.Date(dates.2020[[i]]) + 6), 13, 45, 17, 47, "Slovenia")
+}
+#Sweden
+dates.2019 <- seq(as.Date("2018-12-01"), as.Date("2020-01-03"), by=7) #List of dates starting Dec 3 2018. 
+for (i in 1:length(dates.2019)) {
+  countries.NO2.fxn(as.character(as.Date(dates.2019[[i]])), as.character(as.Date(dates.2019[[i]]) + 6), 11, 55, 25, 70, "Sweden")
+}
+d1 <- seq(as.Date("2019-12-01"), as.Date("2020-02-22"), by=7) #List of dates starting Dec 2 2019. 
+d2 <- seq(as.Date("2020-02-23"), as.Date("2020-03-01"), by=8) 
+d3 <- seq(as.Date("2020-03-02"), as.Date("2021-01-03"), by=7) 
+dates.2020 <- c(d1, d2, d3)
+for (i in 1:length(dates.2020)) {
+  countries.NO2.fxn(as.character(as.Date(dates.2020[[i]])), as.character(as.Date(dates.2020[[i]]) + 6), 11, 55, 25, 70, "Sweden")
+}
+#Uruguay
+dates.2019 <- seq(as.Date("2018-11-28"), as.Date("2019-12-31"), by=7) #List of dates starting Dec 3 2018. 
+for (i in 1:length(dates.2019)) {
+  countries.NO2.fxn(as.character(as.Date(dates.2019[[i]])), as.character(as.Date(dates.2019[[i]]) + 6), -59, -35, -53, -30, "Uruguay")
+}
+d1 <- seq(as.Date("2019-11-28"), as.Date("2020-02-26"), by=7) #List of dates starting Dec 2 2019. 
+d2 <- seq(as.Date("2020-02-27"), as.Date("2020-03-05"), by=8) 
+d3 <- seq(as.Date("2020-03-06"), as.Date("2020-12-31"), by=7) 
+dates.2020 <- c(d1, d2, d3)
+for (i in 1:length(dates.2020)) {
+  countries.NO2.fxn(as.character(as.Date(dates.2020[[i]])), as.character(as.Date(dates.2020[[i]]) + 6), -59, -35, -53, -30, "Uruguay")
+}
+#Lithuania
+dates.2019 <- seq(as.Date("2018-12-01"), as.Date("2020-01-03"), by=7) #List of dates starting Dec 3 2018. 
+for (i in 1:length(dates.2019)) {
+  countries.NO2.fxn(as.character(as.Date(dates.2019[[i]])), as.character(as.Date(dates.2019[[i]]) + 6), 20, 53, 27, 57, "Lithuania")
+}
+d1 <- seq(as.Date("2019-12-01"), as.Date("2020-02-22"), by=7) #List of dates starting Dec 2 2019. 
+d2 <- seq(as.Date("2020-02-23"), as.Date("2020-03-01"), by=8) 
+d3 <- seq(as.Date("2020-03-02"), as.Date("2021-01-03"), by=7) 
+dates.2020 <- c(d1, d2, d3)
+for (i in 1:length(dates.2020)) {
+  countries.NO2.fxn(as.character(as.Date(dates.2020[[i]])), as.character(as.Date(dates.2020[[i]]) + 6), 20, 53, 27, 57, "Lithuania")
+}
+#United States
+dates.2019 <- seq(as.Date("2018-12-04"), as.Date("2020-01-06"), by=7) #List of dates starting Dec 3 2018.
+for (i in 1:length(dates.2019)) {
+  countries.NO2.fxn(as.character(as.Date(dates.2019[[i]])), as.character(as.Date(dates.2019[[i]]) + 6), -130, 23, -65, 49, "US")
+}
+d1 <- seq(as.Date("2019-12-04"), as.Date("2020-02-25"), by=7) #List of dates starting Dec 2 2019. 
+d2 <- seq(as.Date("2020-02-26"), as.Date("2020-03-04"), by=8) 
+d3 <- seq(as.Date("2020-03-05"), as.Date("2021-01-06"), by=7) 
+dates.2020 <- c(d1, d2, d3)
+for (i in 1:length(dates.2020)) {
+  countries.NO2.fxn(as.character(as.Date(dates.2020[[i]])), as.character(as.Date(dates.2020[[i]]) + 6), -130, 23, -65, 49, "US")
+}
+#Netherlands
+dates.2019 <- seq(as.Date("2018-11-30"), as.Date("2020-01-02"), by=7) #List of dates starting Dec 3 2018. 
+for (i in 1:length(dates.2019)) {
+  countries.NO2.fxn(as.character(as.Date(dates.2019[[i]])), as.character(as.Date(dates.2019[[i]]) + 6), 3, 50, 8, 54, "Netherlands")
+}
+d1 <- seq(as.Date("2019-11-30"), as.Date("2020-02-21"), by=7) #List of dates starting Dec 2 2019. 
+d2 <- seq(as.Date("2020-02-22"), as.Date("2020-02-29"), by=8) 
+d3 <- seq(as.Date("2020-03-01"), as.Date("2021-01-02"), by=7) 
+dates.2020 <- c(d1, d2, d3)
+for (i in 1:length(dates.2020)) {
+  countries.NO2.fxn(as.character(as.Date(dates.2020[[i]])), as.character(as.Date(dates.2020[[i]]) + 6), 3, 50, 8, 54, "Netherlands")
+}
+#Estonia
+dates.2019 <- seq(as.Date("2018-11-28"), as.Date("2019-12-31"), by=7) #List of dates starting Dec 3 2018. 
+for (i in 1:length(dates.2019)) {
+  countries.NO2.fxn(as.character(as.Date(dates.2019[[i]])), as.character(as.Date(dates.2019[[i]]) + 6), 21, 57, 29, 60, "Estonia")
+}
+d1 <- seq(as.Date("2019-11-28"), as.Date("2020-02-26"), by=7) #List of dates starting Dec 2 2019. 
+d2 <- seq(as.Date("2020-02-27"), as.Date("2020-03-05"), by=8) 
+d3 <- seq(as.Date("2020-03-06"), as.Date("2020-12-31"), by=7) 
+dates.2020 <- c(d1, d2, d3)
+for (i in 1:length(dates.2020)) {
+  countries.NO2.fxn(as.character(as.Date(dates.2020[[i]])), as.character(as.Date(dates.2020[[i]]) + 6), 21, 57, 29, 60, "Estonia")
+}
+#Argentina
+dates.2019 <- seq(as.Date("2018-12-05"), as.Date("2020-01-07"), by=7) #List of dates starting Dec 3 2018.
+for (i in 1:length(dates.2019)) {
+  countries.NO2.fxn(as.character(as.Date(dates.2019[[i]])), as.character(as.Date(dates.2019[[i]]) + 6), -74, -56, -53, -20, "Argentina")
+}
+d1 <- seq(as.Date("2019-12-05"), as.Date("2020-02-26"), by=7) #List of dates starting Dec 2 2019. 
+d2 <- seq(as.Date("2020-02-27"), as.Date("2020-03-05"), by=8) 
+d3 <- seq(as.Date("2020-03-06"), as.Date("2021-01-07"), by=7) 
+dates.2020 <- c(d1, d2, d3)
+for (i in 1:length(dates.2020)) {
+  countries.NO2.fxn(as.character(as.Date(dates.2020[[i]])), as.character(as.Date(dates.2020[[i]]) + 6), -74, -56, -53, -20, "Argentina")
+}
+#Israel
+dates.2019 <- seq(as.Date("2018-12-04"), as.Date("2020-01-06"), by=7) #List of dates starting Dec 3 2018.
+for (i in 1:length(dates.2019)) {
+  countries.NO2.fxn(as.character(as.Date(dates.2019[[i]])), as.character(as.Date(dates.2019[[i]]) + 6), 34, 29, 36, 34, "Israel")
+}
+d1 <- seq(as.Date("2019-12-04"), as.Date("2020-02-25"), by=7) #List of dates starting Dec 2 2019. 
+d2 <- seq(as.Date("2020-02-26"), as.Date("2020-03-04"), by=8) 
+d3 <- seq(as.Date("2020-03-05"), as.Date("2021-01-06"), by=7) 
+dates.2020 <- c(d1, d2, d3)
+for (i in 1:length(dates.2020)) {
+  countries.NO2.fxn(as.character(as.Date(dates.2020[[i]])), as.character(as.Date(dates.2020[[i]]) + 6), 34, 29, 36, 34, "Israel")
+}
+#China
+dates.2019 <- seq(as.Date("2018-10-31"), as.Date("2019-10-29"), by=7) #List of dates starting Dec 3 2018. 
+for (i in 1:length(dates.2019)) {
+  countries.NO2.fxn(as.character(as.Date(dates.2019[[i]])), as.character(as.Date(dates.2019[[i]]) + 6), 72, 17, 136, 54, "China")
+}
+d1 <- seq(as.Date("2019-10-31"), as.Date("2020-02-26"), by=7) #List of dates starting Dec 2 2019. 
+d2 <- seq(as.Date("2020-02-27"), as.Date("2020-03-05"), by=8) 
+d3 <- seq(as.Date("2020-03-06"), as.Date("2020-10-29"), by=7) 
+dates.2020 <- c(d1, d2, d3)
+for (i in 1:length(dates.2020)) {
+  countries.NO2.fxn(as.character(as.Date(dates.2020[[i]])), as.character(as.Date(dates.2020[[i]]) + 6), 72, 17, 136, 54, "China")
 }
 ```
 

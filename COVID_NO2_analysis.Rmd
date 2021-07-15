@@ -35,7 +35,7 @@ plot(wrld_simpl)
 wrld_simpl[wrld_simpl$NAME == "United States", ]
 
 #Reading in urban areas shapefile. 
-world.sf <- st_read("urban_shapefile/ne_10m_urban_areas_landscan.shp", crs = 4979)  # Read shapefile as an sf object
+world.sf <- st_read("urban_shapefile/ne_10m_urban_areas_landscan.shp", crs = 4326) # Read shapefile as an sf object
 us.urban.sf <- st_read("us_urban_shapefile/tl_2017_us_uac10.shp", crs = 4979)  # Read shapefile as an sf object
 ```
 
@@ -1400,48 +1400,523 @@ ylim(0, 1.5E4) +
 ```{r, eval = TRUE}
 #lockdown time https://en.wikipedia.org/wiki/COVID-19_lockdowns  
 #czechia 1st lockdown: 2020-03-16 -- 2020-04-12, second lockdown: 2020-10-22 -- 2021-03-28 
-#slovenia
-#sweden
-#uruguay
+#slovenia 2020-03-16 -- 05-15-2020
+#sweden: no lockdown (interesting comparison), use same time frame starting 2020-03-16
+#uruguay 2020-03-13 (not entirely clear, but closest estimate)
 #lithuania 1st lockdown: 2020-3-16 -- 2020-06-18, 2nd: 2020-11-07 -- 2020-11-28
-#united states
+#united states 2020-03-19
 #netherlands 1st: 2020-03-15 -- 2020-04-06, 2nd: 2020-12-15 -- 2021-03-02
-#estonia
-#argentina
-#israel 
-wrld_simpl[wrld_simpl$NAME == "Czechia", ]
+#estonia 2020-03-13
+#argentina 2020-03-20
+#israel 2020-03-19
+#china 2020-01-23 to 04-08-2020
+
+#List of top 10 countries for analysis. 
 top.10.countries <- covid.NO2.df %>% filter(Area > 100) %>% arrange(desc(totcases.mil)) 
-top.10.countries <- list(top.10.countries$location[1:10])
+top.10.countries <- top.10.countries$location[1:10]
+china <- "China"
+top.10.countries <- c(top.10.countries, china) #Top 10 countries plus China. 
 
----
 world.urban.sp <- as(world.sf, Class = "Spatial")
-top.10.sp <- gIntersection(wrld_simpl[wrld_simpl$NAME == "United States", ], world.urban.sp)
-test <- st_as_sf(test)
----
-rastlist.fxn <- function(location) {
-  list.files(path = paste0("time_analysis_2019_", location), pattern='.tif$', 
-all.files=TRUE, full.names=FALSE) 
+world.urban.sp <- spTransform(world.urban.sp, CRS("+init=epsg:4326 +proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs"))
+
+#Used code: 
+  # gsutil -m cp \
+  # file list 
+  # COVID-19_NO2/[Location]_time_analysis_2019
+# to retrieve files from google cloud storage. 
+
+#Rastlist, all countries. 
+rastlist.2019.fxn <- function(location) {
+   rastlist <- list.files(path = paste0(location, "_time_analysis_2019"), pattern='.tif$', 
+all.files=TRUE, full.names=FALSE)
+   rastlist
 }
-top.10.urban.raster.list <- purrr:pmap(top.10.countries)
+top.10.2019.raster.list <- purrr::map(top.10.countries, rastlist.2019.fxn) #Makes list by country with all weekly files as elements.  
 
+rastlist.2020.fxn <- function(location) {
+   rastlist <- list.files(path = paste0(location, "_time_analysis_2019"), pattern='.tif$', 
+all.files=TRUE, full.names=FALSE)
+   rastlist
+}
+top.10.2020.raster.list <- purrr::map(top.10.countries, rastlist.2020.fxn) #Makes list by country with all weekly files as elements.  
 
+#Urban shapefiles. 
+rgeos::set_RGEOS_CheckValidity(2L)
 top.10.urban.fxn <- function(location) {
-  country.sp <- gIntersection(wrld_simpl[wrld_simpl$NAME == location, ], world.urban.sp)
-  country.sf <- st_as_sf(country.sp)
-top.10.urban.list <- purrr:pmap(top.10.countries) 
+  country.shp <- wrld_simpl[wrld_simpl$NAME == location, ]
+  country.shp <- spTransform(country.shp, CRSobj = "+init=epsg:4326 +proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs")
+  urban.country.sp <- gIntersection(country.shp, world.urban.sp)
+```
+
+
+```{r, eval = TRUE}
+urban.country.sf <- st_as_sf(urban.country.sp)
+  urban.country.sf
+}
+top.10.urban.shp.list <- purrr::map(top.10.countries, top.10.urban.fxn) #Makes list of urban shapefiles by country.  
+
+#Rural shapefiles.
+top.10.rural.fxn <- function(location, n) {
+  country.shp <- wrld_simpl[wrld_simpl$NAME == location, ]
+  country.shp <- spTransform(country.shp, CRSobj = "+init=epsg:4326 +proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs")
+  country.urban.sf <- top.10.urban.shp.list[[n]]
+  country.urban.sp <- as(country.urban.sf, Class = "Spatial")
+  country.rural.sp <- gDifference(country.shp, country.urban.sp)
+  country.rural.sf <- st_as_sf(country.rural.sp)
+  country.rural.sf
+}
+
+n <- 1:11
+top.10.rural.shp.list <- purrr::pmap(list(top.10.countries, n), top.10.rural.fxn) #Makes list of rural shapefiles by country.  
+
+#2019 general function. 
+extract.2019.fxn <- function(location, year, x, country.sf, date) {
+  r <- raster(paste0(location, "_time_analysis_", year, "/", x)) %>%
+    flip(direction='y') 
   r.vals <- exact_extract(r, country.sf, weights = 'area', 'mean') 
   r.mean <- mean(r.vals, na.rm = TRUE)
   final.df <- data.frame("NO2_Concentration" = r.mean)   
   Location <- as.character(location)
-  Date <- as.factor(as.Date(dates.2019[[y]] %m+% years(1))) #Adds 1 year to date to match x axis of 2020 dates.
-  Week <- paste0(as.character(as.Date(dates.2019[[y]])), " to ", as.character(as.Date(dates.2019[[y]]) + 6)) 
+  Date <- as.factor((date %m+% years(1))) #Adds 1 year to date to match x axis of 2020 dates.
+  Week <- paste0(as.character(date), " to ", as.character((date) + 6))
   Period <- rep(2019, length.out = nrow(final.df)) 
-  urban.2019.weekly <- cbind(final.df, Location, Period, Date, Week) 
-  urban.2019.weekly <- urban.2019.weekly %>% select(Location, Period, Date, Week, NO2_Concentration)
+  weekly.2019 <- cbind(final.df, Location, Period, Date, Week) 
+  weekly.2019 <- weekly.2019 %>% select(Location, Period, Date, Week, NO2_Concentration)
 }
-#list of rasters for each country with elements for each week 
 
-top.10.urban.list <- purrr:pmap(top.10.countries, ) #creates list of urban shapefiles for each country
+#2020 general function. 
+extract.2020.fxn <- function(location, year, x, country.sf, date) {
+  r <- raster(paste0(location, "_time_analysis_", year, "/", x)) %>%
+    flip(direction='y') 
+  r.vals <- exact_extract(r, country.sf, weights = 'area', 'mean') 
+  r.mean <- mean(r.vals, na.rm = TRUE)
+  final.df <- data.frame("NO2_Concentration" = r.mean)   
+  Location <- as.character(location)
+  Date <- as.factor(date)
+  Week <- paste0(as.character(date), " to ", as.character((date) + 6))
+  Period <- rep(2019, length.out = nrow(final.df)) 
+  weekly.2020 <- cbind(final.df, Location, Period, Date, Week) 
+  weekly.2020 <- weekly.2020 %>% select(Location, Period, Date, Week, NO2_Concentration)
+}
+
+#Czechia
+dates.2019 <- seq(as.Date("2018-12-01"), as.Date("2020-01-03"), by=7) #List of dates starting Dec 3 2018. 
+d1 <- seq(as.Date("2019-12-01"), as.Date("2020-02-22"), by=7) #List of dates starting Dec 2 2019. 
+d2 <- seq(as.Date("2020-02-23"), as.Date("2020-03-01"), by=8) 
+d3 <- seq(as.Date("2020-03-02"), as.Date("2021-01-03"), by=7) 
+dates.2020 <- c(d1, d2, d3)
+#Czechia 2019 urban
+location.2019 <- rep("Czechia", length.out = length(top.10.2019.raster.list[[1]]))
+year.2019 <- rep("2019", length.out = length(top.10.2019.raster.list[[1]]))
+x.2019 <- top.10.2019.raster.list[[1]]
+country.sf <- rep(top.10.urban.shp.list[[1]], length.out = length(top.10.2019.raster.list[[1]]))
+date.2019 <- as.Date(dates.2019)
+czechia.urban.2019.weekly.df <- purrr::pmap_dfr(list(location.2019, year.2019, x.2019, country.sf, date.2019), extract.2019.fxn)
+
+#Czechia 2020 urban
+location.2020 <- rep("Czechia", length.out = length(top.10.2020.raster.list[[1]]))
+year.2020 <- rep("2020", length.out = length(top.10.2020.raster.list[[1]]))
+x.2020 <- top.10.2020.raster.list[[1]]
+country.sf <- rep(top.10.urban.shp.list[[1]], length.out = length(top.10.2020.raster.list[[1]]))
+date.2020 <- as.Date(dates.2020)
+czechia.urban.2020.weekly.df <- purrr::pmap_dfr(list(location.2020, year.2020, x.2020, country.sf, date.2020), extract.2020.fxn)
+
+czechia.urban.weekly.df <- rbind(czechia.urban.2019.weekly.df, czechia.urban.2020.weekly.df) 
+write.csv(czechia.urban.weekly.df, file = 'time_series_csv/czechia.urban.weekly.NO2.csv')
+rm(czechia.urban.weekly.df, czechia.urban.2019.weekly.df, czechia.urban.2020.weekly.df)
+
+#Czechia 2019 rural
+country.sf <- rep(top.10.rural.shp.list[[1]], length.out = length(top.10.2019.raster.list[[1]]))
+czechia.rural.2019.weekly.df <- purrr::pmap_dfr(list(location.2019, year.2019, x.2019, country.sf, date.2019), extract.2019.fxn)
+
+#Czechia 2020 rural
+country.sf <- rep(top.10.rural.shp.list[[1]], length.out = length(top.10.2020.raster.list[[1]]))
+czechia.rural.2020.weekly.df <- purrr::pmap_dfr(list(location.2020, year.2020, x.2020, country.sf, date.2020), extract.2020.fxn)
+
+czechia.rural.weekly.df <- rbind(czechia.rural.2019.weekly.df, czechia.rural.2020.weekly.df) 
+write.csv(czechia.rural.weekly.df, file = 'time_series_csv/czechia.rural.weekly.NO2.csv')
+rm(czechia.rural.weekly.df, czechia.rural.2019.weekly.df, czechia.rural.2020.weekly.df)
+
+#Slovenia
+dates.2019 <- seq(as.Date("2018-12-01"), as.Date("2020-01-03"), by=7) #List of dates starting Dec 3 2018. 
+d1 <- seq(as.Date("2019-12-01"), as.Date("2020-02-22"), by=7) #List of dates starting Dec 2 2019. 
+d2 <- seq(as.Date("2020-02-23"), as.Date("2020-03-01"), by=8) 
+d3 <- seq(as.Date("2020-03-02"), as.Date("2021-01-03"), by=7) 
+dates.2020 <- c(d1, d2, d3)
+#Slovenia 2019 urban
+location.2019 <- rep("Slovenia", length.out = length(top.10.2019.raster.list[[2]]))
+year.2019 <- rep("2019", length.out = length(top.10.2019.raster.list[[2]]))
+x.2019 <- top.10.2019.raster.list[[2]]
+country.sf <- rep(top.10.urban.shp.list[[2]], length.out = length(top.10.2019.raster.list[[2]]))
+date.2019 <- as.Date(dates.2019)
+slovenia.urban.2019.weekly.df <- purrr::pmap_dfr(list(location.2019, year.2019, x.2019, country.sf, date.2019), extract.2019.fxn)
+
+#Slovenia 2020 urban
+location.2020 <- rep("Slovenia", length.out = length(top.10.2020.raster.list[[2]]))
+year.2020 <- rep("2020", length.out = length(top.10.2020.raster.list[[2]]))
+x.2020 <- top.10.2020.raster.list[[2]]
+country.sf <- rep(top.10.urban.shp.list[[2]], length.out = length(top.10.2020.raster.list[[2]]))
+date.2020 <- as.Date(dates.2020)
+slovenia.urban.2020.weekly.df <- purrr::pmap_dfr(list(location.2020, year.2020, x.2020, country.sf, date.2020), extract.2020.fxn)
+
+slovenia.urban.weekly.df <- rbind(slovenia.urban.2019.weekly.df, slovenia.urban.2020.weekly.df) 
+write.csv(slovenia.urban.weekly.df, file = 'time_series_csv/slovenia.urban.weekly.NO2.csv')
+rm(slovenia.urban.weekly.df, slovenia.urban.2019.weekly.df, slovenia.urban.2020.weekly.df)
+
+#Slovenia 2019 rural
+country.sf <- rep(top.10.rural.shp.list[[2]], length.out = length(top.10.2019.raster.list[[2]]))
+slovenia.rural.2019.weekly.df <- purrr::pmap_dfr(list(location.2019, year.2019, x.2019, country.sf, date.2019), extract.2019.fxn)
+
+#Slovenia 2020 rural
+country.sf <- rep(top.10.rural.shp.list[[2]], length.out = length(top.10.2020.raster.list[[2]]))
+slovenia.rural.2020.weekly.df <- purrr::pmap_dfr(list(location.2020, year.2020, x.2020, country.sf, date.2020), extract.2020.fxn)
+
+slovenia.rural.weekly.df <- rbind(slovenia.rural.2019.weekly.df, slovenia.rural.2020.weekly.df) 
+write.csv(slovenia.rural.weekly.df, file = 'time_series_csv/slovenia.rural.weekly.NO2.csv')
+rm(slovenia.rural.weekly.df, slovenia.rural.2019.weekly.df, slovenia.rural.2020.weekly.df)
+
+#Sweden
+dates.2019 <- seq(as.Date("2018-12-01"), as.Date("2020-01-03"), by=7) #List of dates starting Dec 3 2018. 
+d1 <- seq(as.Date("2019-12-01"), as.Date("2020-02-22"), by=7) #List of dates starting Dec 2 2019. 
+d2 <- seq(as.Date("2020-02-23"), as.Date("2020-03-01"), by=8) 
+d3 <- seq(as.Date("2020-03-02"), as.Date("2021-01-03"), by=7) 
+dates.2020 <- c(d1, d2, d3)
+#Sweden 2019 urban
+location.2019 <- rep("Sweden", length.out = length(top.10.2019.raster.list[[3]]))
+year.2019 <- rep("2019", length.out = length(top.10.2019.raster.list[[3]]))
+x.2019 <- top.10.2019.raster.list[[3]]
+country.sf <- rep(top.10.urban.shp.list[[3]], length.out = length(top.10.2019.raster.list[[3]]))
+date.2019 <- as.Date(dates.2019)
+sweden.urban.2019.weekly.df <- purrr::pmap_dfr(list(location.2019, year.2019, x.2019, country.sf, date.2019), extract.2019.fxn)
+
+#Sweden 2020 urban
+location.2020 <- rep("Sweden", length.out = length(top.10.2020.raster.list[[3]]))
+year.2020 <- rep("2020", length.out = length(top.10.2020.raster.list[[3]]))
+x.2020 <- top.10.2020.raster.list[[3]]
+country.sf <- rep(top.10.urban.shp.list[[3]], length.out = length(top.10.2020.raster.list[[3]]))
+date.2020 <- as.Date(dates.2020)
+sweden.urban.2020.weekly.df <- purrr::pmap_dfr(list(location.2020, year.2020, x.2020, country.sf, date.2020), extract.2020.fxn)
+
+sweden.urban.weekly.df <- rbind(sweden.urban.2019.weekly.df, sweden.urban.2020.weekly.df) 
+write.csv(sweden.urban.weekly.df, file = 'time_series_csv/sweden.urban.weekly.NO2.csv')
+rm(sweden.urban.weekly.df, sweden.urban.2019.weekly.df, sweden.urban.2020.weekly.df)
+
+#Sweden 2019 rural
+country.sf <- rep(top.10.rural.shp.list[[3]], length.out = length(top.10.2019.raster.list[[3]]))
+sweden.rural.2019.weekly.df <- purrr::pmap_dfr(list(location.2019, year.2019, x.2019, country.sf, date.2019), extract.2019.fxn)
+
+#Sweden 2020 rural
+country.sf <- rep(top.10.rural.shp.list[[3]], length.out = length(top.10.2020.raster.list[[3]]))
+sweden.rural.2020.weekly.df <- purrr::pmap_dfr(list(location.2020, year.2020, x.2020, country.sf, date.2020), extract.2020.fxn)
+
+sweden.rural.weekly.df <- rbind(sweden.rural.2019.weekly.df, sweden.rural.2020.weekly.df) 
+write.csv(sweden.rural.weekly.df, file = 'time_series_csv/sweden.rural.weekly.NO2.csv')
+rm(sweden.rural.weekly.df, sweden.rural.2019.weekly.df, sweden.rural.2020.weekly.df)
+
+#Uruguay
+dates.2019 <- seq(as.Date("2018-11-28"), as.Date("2019-12-31"), by=7) #List of dates starting Dec 3 2018. 
+d1 <- seq(as.Date("2019-11-28"), as.Date("2020-02-26"), by=7) #List of dates starting Dec 2 2019. 
+d2 <- seq(as.Date("2020-02-27"), as.Date("2020-03-05"), by=8) 
+d3 <- seq(as.Date("2020-03-06"), as.Date("2020-12-31"), by=7) 
+dates.2020 <- c(d1, d2, d3)
+#Uruguay 2019 urban
+location.2019 <- rep("Uruguay", length.out = length(top.10.2019.raster.list[[4]]))
+year.2019 <- rep("2019", length.out = length(top.10.2019.raster.list[[4]]))
+x.2019 <- top.10.2019.raster.list[[4]]
+country.sf <- rep(top.10.urban.shp.list[[4]], length.out = length(top.10.2019.raster.list[[4]]))
+date.2019 <- as.Date(dates.2019)
+uruguay.urban.2019.weekly.df <- purrr::pmap_dfr(list(location.2019, year.2019, x.2019, country.sf, date.2019), extract.2019.fxn)
+
+#Uruguay 2020 urban
+location.2020 <- rep("Uruguay", length.out = length(top.10.2020.raster.list[[4]]))
+year.2020 <- rep("2020", length.out = length(top.10.2020.raster.list[[4]]))
+x.2020 <- top.10.2020.raster.list[[4]]
+country.sf <- rep(top.10.urban.shp.list[[4]], length.out = length(top.10.2020.raster.list[[4]]))
+date.2020 <- as.Date(dates.2020)
+uruguay.urban.2020.weekly.df <- purrr::pmap_dfr(list(location.2020, year.2020, x.2020, country.sf, date.2020), extract.2020.fxn)
+
+uruguay.urban.weekly.df <- rbind(uruguay.urban.2019.weekly.df, uruguay.urban.2020.weekly.df) 
+write.csv(uruguay.urban.weekly.df, file = 'time_series_csv/uruguay.urban.weekly.NO2.csv')
+rm(uruguay.urban.weekly.df, uruguay.urban.2019.weekly.df, uruguay.urban.2020.weekly.df)
+
+#Uruguay 2019 rural
+country.sf <- rep(top.10.rural.shp.list[[4]], length.out = length(top.10.2019.raster.list[[4]]))
+uruguay.rural.2019.weekly.df <- purrr::pmap_dfr(list(location.2019, year.2019, x.2019, country.sf, date.2019), extract.2019.fxn)
+
+#Uruguay 2020 rural
+country.sf <- rep(top.10.rural.shp.list[[4]], length.out = length(top.10.2020.raster.list[[4]]))
+uruguay.rural.2020.weekly.df <- purrr::pmap_dfr(list(location.2020, year.2020, x.2020, country.sf, date.2020), extract.2020.fxn)
+
+uruguay.rural.weekly.df <- rbind(uruguay.rural.2019.weekly.df, uruguay.rural.2020.weekly.df) 
+write.csv(uruguay.rural.weekly.df, file = 'time_series_csv/uruguay.rural.weekly.NO2.csv')
+rm(uruguay.rural.weekly.df, uruguay.rural.2019.weekly.df, uruguay.rural.2020.weekly.df)
+
+#Lithuania
+dates.2019 <- seq(as.Date("2018-12-01"), as.Date("2020-01-03"), by=7) #List of dates starting Dec 3 2018. 
+d1 <- seq(as.Date("2019-12-01"), as.Date("2020-02-22"), by=7) #List of dates starting Dec 2 2019. 
+d2 <- seq(as.Date("2020-02-23"), as.Date("2020-03-01"), by=8) 
+d3 <- seq(as.Date("2020-03-02"), as.Date("2021-01-03"), by=7) 
+dates.2020 <- c(d1, d2, d3)
+#Lithuania 2019 urban
+location.2019 <- rep("Lithuania", length.out = length(top.10.2019.raster.list[[5]]))
+year.2019 <- rep("2019", length.out = length(top.10.2019.raster.list[[5]]))
+x.2019 <- top.10.2019.raster.list[[5]]
+country.sf <- rep(top.10.urban.shp.list[[5]], length.out = length(top.10.2019.raster.list[[5]]))
+date.2019 <- as.Date(dates.2019)
+lithuania.urban.2019.weekly.df <- purrr::pmap_dfr(list(location.2019, year.2019, x.2019, country.sf, date.2019), extract.2019.fxn)
+
+#Lithuania 2020 urban
+location.2020 <- rep("Lithuania", length.out = length(top.10.2020.raster.list[[5]]))
+year.2020 <- rep("2020", length.out = length(top.10.2020.raster.list[[5]]))
+x.2020 <- top.10.2020.raster.list[[5]]
+country.sf <- rep(top.10.urban.shp.list[[5]], length.out = length(top.10.2020.raster.list[[5]]))
+date.2020 <- as.Date(dates.2020)
+lithuania.urban.2020.weekly.df <- purrr::pmap_dfr(list(location.2020, year.2020, x.2020, country.sf, date.2020), extract.2020.fxn)
+
+lithuania.urban.weekly.df <- rbind(lithuania.urban.2019.weekly.df, lithuania.urban.2020.weekly.df) 
+write.csv(lithuania.urban.weekly.df, file = 'time_series_csv/lithuania.urban.weekly.NO2.csv')
+rm(lithuania.urban.weekly.df, lithuania.urban.2019.weekly.df, lithuania.urban.2020.weekly.df)
+
+#Lithuania 2019 rural
+country.sf <- rep(top.10.rural.shp.list[[5]], length.out = length(top.10.2019.raster.list[[5]]))
+lithuania.rural.2019.weekly.df <- purrr::pmap_dfr(list(location.2019, year.2019, x.2019, country.sf, date.2019), extract.2019.fxn)
+
+#Lithuania 2020 rural
+country.sf <- rep(top.10.rural.shp.list[[5]], length.out = length(top.10.2020.raster.list[[5]]))
+lithuania.rural.2020.weekly.df <- purrr::pmap_dfr(list(location.2020, year.2020, x.2020, country.sf, date.2020), extract.2020.fxn)
+
+lithuania.rural.weekly.df <- rbind(lithuania.rural.2019.weekly.df, lithuania.rural.2020.weekly.df) 
+write.csv(lithuania.rural.weekly.df, file = 'time_series_csv/lithuania.rural.weekly.NO2.csv')
+rm(lithuania.rural.weekly.df, lithuania.rural.2019.weekly.df, lithuania.rural.2020.weekly.df)
+
+#United States
+dates.2019 <- seq(as.Date("2018-12-04"), as.Date("2020-01-06"), by=7) #List of dates starting Dec 3 2018.
+d1 <- seq(as.Date("2019-12-04"), as.Date("2020-02-25"), by=7) #List of dates starting Dec 2 2019. 
+d2 <- seq(as.Date("2020-02-26"), as.Date("2020-03-04"), by=8) 
+d3 <- seq(as.Date("2020-03-05"), as.Date("2021-01-06"), by=7) 
+dates.2020 <- c(d1, d2, d3)
+#US 2019 urban
+location.2019 <- rep("US", length.out = length(top.10.2019.raster.list[[6]]))
+year.2019 <- rep("2019", length.out = length(top.10.2019.raster.list[[6]]))
+x.2019 <- top.10.2019.raster.list[[6]]
+country.sf <- rep(top.10.urban.shp.list[[6]], length.out = length(top.10.2019.raster.list[[6]]))
+date.2019 <- as.Date(dates.2019)
+us.urban.2019.weekly.df <- purrr::pmap_dfr(list(location.2019, year.2019, x.2019, country.sf, date.2019), extract.2019.fxn)
+
+#US 2020 urban
+location.2020 <- rep("US", length.out = length(top.10.2020.raster.list[[6]]))
+year.2020 <- rep("2020", length.out = length(top.10.2020.raster.list[[6]]))
+x.2020 <- top.10.2020.raster.list[[6]]
+country.sf <- rep(top.10.urban.shp.list[[6]], length.out = length(top.10.2020.raster.list[[6]]))
+date.2020 <- as.Date(dates.2020)
+us.urban.2020.weekly.df <- purrr::pmap_dfr(list(location.2020, year.2020, x.2020, country.sf, date.2020), extract.2020.fxn)
+
+us.urban.weekly.df <- rbind(us.urban.2019.weekly.df, us.urban.2020.weekly.df) 
+write.csv(us.urban.weekly.df, file = 'time_series_csv/us.urban.weekly.NO2.csv')
+rm(us.urban.weekly.df, us.urban.2019.weekly.df, us.urban.2020.weekly.df)
+
+#US 2019 rural
+country.sf <- rep(top.10.rural.shp.list[[6]], length.out = length(top.10.2019.raster.list[[6]]))
+us.rural.2019.weekly.df <- purrr::pmap_dfr(list(location.2019, year.2019, x.2019, country.sf, date.2019), extract.2019.fxn)
+
+#US 2020 rural
+country.sf <- rep(top.10.rural.shp.list[[6]], length.out = length(top.10.2020.raster.list[[6]]))
+us.rural.2020.weekly.df <- purrr::pmap_dfr(list(location.2020, year.2020, x.2020, country.sf, date.2020), extract.2020.fxn)
+
+us.rural.weekly.df <- rbind(us.rural.2019.weekly.df, us.rural.2020.weekly.df) 
+write.csv(us.rural.weekly.df, file = 'time_series_csv/us.rural.weekly.NO2.csv')
+rm(us.rural.weekly.df, us.rural.2019.weekly.df, us.rural.2020.weekly.df)
+
+#Netherlands
+dates.2019 <- seq(as.Date("2018-11-30"), as.Date("2020-01-02"), by=7) #List of dates starting Dec 3 2018. 
+d1 <- seq(as.Date("2019-11-30"), as.Date("2020-02-21"), by=7) #List of dates starting Dec 2 2019. 
+d2 <- seq(as.Date("2020-02-22"), as.Date("2020-02-29"), by=8) 
+d3 <- seq(as.Date("2020-03-01"), as.Date("2021-01-02"), by=7) 
+dates.2020 <- c(d1, d2, d3)
+#Netherlands 2019 urban
+location.2019 <- rep("Netherlands", length.out = length(top.10.2019.raster.list[[7]]))
+year.2019 <- rep("2019", length.out = length(top.10.2019.raster.list[[7]]))
+x.2019 <- top.10.2019.raster.list[[7]]
+country.sf <- rep(top.10.urban.shp.list[[7]], length.out = length(top.10.2019.raster.list[[7]]))
+date.2019 <- as.Date(dates.2019)
+netherlands.urban.2019.weekly.df <- purrr::pmap_dfr(list(location.2019, year.2019, x.2019, country.sf, date.2019), extract.2019.fxn)
+
+#Netherlands 2020 urban
+location.2020 <- rep("Netherlands", length.out = length(top.10.2020.raster.list[[7]]))
+year.2020 <- rep("2020", length.out = length(top.10.2020.raster.list[[7]]))
+x.2020 <- top.10.2020.raster.list[[7]]
+country.sf <- rep(top.10.urban.shp.list[[7]], length.out = length(top.10.2020.raster.list[[7]]))
+date.2020 <- as.Date(dates.2020)
+netherlands.urban.2020.weekly.df <- purrr::pmap_dfr(list(location.2020, year.2020, x.2020, country.sf, date.2020), extract.2020.fxn)
+
+netherlands.urban.weekly.df <- rbind(netherlands.urban.2019.weekly.df, netherlands.urban.2020.weekly.df) 
+write.csv(netherlands.urban.weekly.df, file = 'time_series_csv/netherlands.urban.weekly.NO2.csv')
+rm(netherlands.urban.weekly.df, netherlands.urban.2019.weekly.df, netherlands.urban.2020.weekly.df)
+
+#Netherlands 2019 rural
+country.sf <- rep(top.10.rural.shp.list[[7]], length.out = length(top.10.2019.raster.list[[7]]))
+netherlands.rural.2019.weekly.df <- purrr::pmap_dfr(list(location.2019, year.2019, x.2019, country.sf, date.2019), extract.2019.fxn)
+
+#Netherlands 2020 rural
+country.sf <- rep(top.10.rural.shp.list[[7]], length.out = length(top.10.2020.raster.list[[7]]))
+netherlands.rural.2020.weekly.df <- purrr::pmap_dfr(list(location.2020, year.2020, x.2020, country.sf, date.2020), extract.2020.fxn)
+
+netherlands.rural.weekly.df <- rbind(netherlands.rural.2019.weekly.df, netherlands.rural.2020.weekly.df) 
+write.csv(netherlands.rural.weekly.df, file = 'time_series_csv/netherlands.rural.weekly.NO2.csv')
+rm(netherlands.rural.weekly.df, netherlands.rural.2019.weekly.df, netherlands.rural.2020.weekly.df)
+
+#Estonia
+dates.2019 <- seq(as.Date("2018-11-28"), as.Date("2019-12-31"), by=7) #List of dates starting Dec 3 2018. 
+d1 <- seq(as.Date("2019-11-28"), as.Date("2020-02-26"), by=7) #List of dates starting Dec 2 2019. 
+d2 <- seq(as.Date("2020-02-27"), as.Date("2020-03-05"), by=8) 
+d3 <- seq(as.Date("2020-03-06"), as.Date("2020-12-31"), by=7) 
+dates.2020 <- c(d1, d2, d3)
+#Estonia 2019 urban
+location.2019 <- rep("Estonia", length.out = length(top.10.2019.raster.list[[8]]))
+year.2019 <- rep("2019", length.out = length(top.10.2019.raster.list[[8]]))
+x.2019 <- top.10.2019.raster.list[[8]]
+country.sf <- rep(top.10.urban.shp.list[[8]], length.out = length(top.10.2019.raster.list[[8]]))
+date.2019 <- as.Date(dates.2019)
+estonia.urban.2019.weekly.df <- purrr::pmap_dfr(list(location.2019, year.2019, x.2019, country.sf, date.2019), extract.2019.fxn)
+
+#Estonia 2020 urban
+location.2020 <- rep("Estonia", length.out = length(top.10.2020.raster.list[[8]]))
+year.2020 <- rep("2020", length.out = length(top.10.2020.raster.list[[8]]))
+x.2020 <- top.10.2020.raster.list[[8]]
+country.sf <- rep(top.10.urban.shp.list[[8]], length.out = length(top.10.2020.raster.list[[8]]))
+date.2020 <- as.Date(dates.2020)
+estonia.urban.2020.weekly.df <- purrr::pmap_dfr(list(location.2020, year.2020, x.2020, country.sf, date.2020), extract.2020.fxn)
+
+estonia.urban.weekly.df <- rbind(estonia.urban.2019.weekly.df, estonia.urban.2020.weekly.df) 
+write.csv(estonia.urban.weekly.df, file = 'time_series_csv/estonia.urban.weekly.NO2.csv')
+rm(estonia.urban.weekly.df, estonia.urban.2019.weekly.df, estonia.urban.2020.weekly.df)
+
+#Estonia 2019 rural
+country.sf <- rep(top.10.rural.shp.list[[8]], length.out = length(top.10.2019.raster.list[[8]]))
+estonia.rural.2019.weekly.df <- purrr::pmap_dfr(list(location.2019, year.2019, x.2019, country.sf, date.2019), extract.2019.fxn)
+
+#Estonia 2020 rural
+country.sf <- rep(top.10.rural.shp.list[[8]], length.out = length(top.10.2020.raster.list[[8]]))
+estonia.rural.2020.weekly.df <- purrr::pmap_dfr(list(location.2020, year.2020, x.2020, country.sf, date.2020), extract.2020.fxn)
+
+estonia.rural.weekly.df <- rbind(estonia.rural.2019.weekly.df, estonia.rural.2020.weekly.df) 
+write.csv(estonia.rural.weekly.df, file = 'time_series_csv/estonia.rural.weekly.NO2.csv')
+rm(estonia.rural.weekly.df, estonia.rural.2019.weekly.df, estonia.rural.2020.weekly.df)
+
+#Argentina
+dates.2019 <- seq(as.Date("2018-12-05"), as.Date("2020-01-07"), by=7) #List of dates starting Dec 3 2018.
+d1 <- seq(as.Date("2019-12-05"), as.Date("2020-02-26"), by=7) #List of dates starting Dec 2 2019. 
+d2 <- seq(as.Date("2020-02-27"), as.Date("2020-03-05"), by=8) 
+d3 <- seq(as.Date("2020-03-06"), as.Date("2021-01-07"), by=7) 
+dates.2020 <- c(d1, d2, d3)
+#Argentina 2019 urban
+location.2019 <- rep("Argentina", length.out = length(top.10.2019.raster.list[[9]]))
+year.2019 <- rep("2019", length.out = length(top.10.2019.raster.list[[9]]))
+x.2019 <- top.10.2019.raster.list[[9]]
+country.sf <- rep(top.10.urban.shp.list[[9]], length.out = length(top.10.2019.raster.list[[9]]))
+date.2019 <- as.Date(dates.2019)
+argentina.urban.2019.weekly.df <- purrr::pmap_dfr(list(location.2019, year.2019, x.2019, country.sf, date.2019), extract.2019.fxn)
+
+#Argentina 2020 urban
+location.2020 <- rep("Argentina", length.out = length(top.10.2020.raster.list[[9]]))
+year.2020 <- rep("2020", length.out = length(top.10.2020.raster.list[[9]]))
+x.2020 <- top.10.2020.raster.list[[9]]
+country.sf <- rep(top.10.urban.shp.list[[9]], length.out = length(top.10.2020.raster.list[[9]]))
+date.2020 <- as.Date(dates.2020)
+argentina.urban.2020.weekly.df <- purrr::pmap_dfr(list(location.2020, year.2020, x.2020, country.sf, date.2020), extract.2020.fxn)
+
+argentina.urban.weekly.df <- rbind(argentina.urban.2019.weekly.df, argentina.urban.2020.weekly.df) 
+write.csv(argentina.urban.weekly.df, file = 'time_series_csv/argentina.urban.weekly.NO2.csv')
+rm(argentina.urban.weekly.df, argentina.urban.2019.weekly.df, argentina.urban.2020.weekly.df)
+
+#Argentina 2019 rural
+country.sf <- rep(top.10.rural.shp.list[[9]], length.out = length(top.10.2019.raster.list[[9]]))
+argentina.rural.2019.weekly.df <- purrr::pmap_dfr(list(location.2019, year.2019, x.2019, country.sf, date.2019), extract.2019.fxn)
+
+#Argentina 2020 rural
+country.sf <- rep(top.10.rural.shp.list[[9]], length.out = length(top.10.2020.raster.list[[9]]))
+argentina.rural.2020.weekly.df <- purrr::pmap_dfr(list(location.2020, year.2020, x.2020, country.sf, date.2020), extract.2020.fxn)
+
+argentina.rural.weekly.df <- rbind(argentina.rural.2019.weekly.df, argentina.rural.2020.weekly.df) 
+write.csv(argentina.rural.weekly.df, file = 'time_series_csv/argentina.rural.weekly.NO2.csv')
+rm(argentina.rural.weekly.df, argentina.rural.2019.weekly.df, argentina.rural.2020.weekly.df)
+
+#Israel
+dates.2019 <- seq(as.Date("2018-12-04"), as.Date("2020-01-06"), by=7) #List of dates starting Dec 3 2018.
+d1 <- seq(as.Date("2019-12-04"), as.Date("2020-02-25"), by=7) #List of dates starting Dec 2 2019. 
+d2 <- seq(as.Date("2020-02-26"), as.Date("2020-03-04"), by=8) 
+d3 <- seq(as.Date("2020-03-05"), as.Date("2021-01-06"), by=7) 
+dates.2020 <- c(d1, d2, d3)
+#Israel 2019 urban
+location.2019 <- rep("Israel", length.out = length(top.10.2019.raster.list[[10]]))
+year.2019 <- rep("2019", length.out = length(top.10.2019.raster.list[[10]]))
+x.2019 <- top.10.2019.raster.list[[10]]
+country.sf <- rep(top.10.urban.shp.list[[10]], length.out = length(top.10.2019.raster.list[[10]]))
+date.2019 <- as.Date(dates.2019)
+israel.urban.2019.weekly.df <- purrr::pmap_dfr(list(location.2019, year.2019, x.2019, country.sf, date.2019), extract.2019.fxn)
+
+#Israel 2020 urban
+location.2020 <- rep("Israel", length.out = length(top.10.2020.raster.list[[10]]))
+year.2020 <- rep("2020", length.out = length(top.10.2020.raster.list[[10]]))
+x.2020 <- top.10.2020.raster.list[[10]]
+country.sf <- rep(top.10.urban.shp.list[[10]], length.out = length(top.10.2020.raster.list[[10]]))
+date.2020 <- as.Date(dates.2020)
+israel.urban.2020.weekly.df <- purrr::pmap_dfr(list(location.2020, year.2020, x.2020, country.sf, date.2020), extract.2020.fxn)
+
+israel.urban.weekly.df <- rbind(israel.urban.2019.weekly.df, israel.urban.2020.weekly.df) 
+write.csv(israel.urban.weekly.df, file = 'time_series_csv/israel.urban.weekly.NO2.csv')
+rm(israel.urban.weekly.df, israel.urban.2019.weekly.df, israel.urban.2020.weekly.df)
+
+#Israel 2019 rural
+country.sf <- rep(top.10.rural.shp.list[[10]], length.out = length(top.10.2019.raster.list[[10]]))
+israel.rural.2019.weekly.df <- purrr::pmap_dfr(list(location.2019, year.2019, x.2019, country.sf, date.2019), extract.2019.fxn)
+
+#Israel 2020 rural
+country.sf <- rep(top.10.rural.shp.list[[10]], length.out = length(top.10.2020.raster.list[[10]]))
+israel.rural.2020.weekly.df <- purrr::pmap_dfr(list(location.2020, year.2020, x.2020, country.sf, date.2020), extract.2020.fxn)
+
+israel.rural.weekly.df <- rbind(israel.rural.2019.weekly.df, israel.rural.2020.weekly.df) 
+write.csv(israel.rural.weekly.df, file = 'time_series_csv/israel.rural.weekly.NO2.csv')
+rm(israel.rural.weekly.df, israel.rural.2019.weekly.df, israel.rural.2020.weekly.df)
+
+#China
+dates.2019 <- seq(as.Date("2018-10-31"), as.Date("2019-10-29"), by=7) #List of dates starting Dec 3 2018. 
+d1 <- seq(as.Date("2019-10-31"), as.Date("2020-02-26"), by=7) #List of dates starting Dec 2 2019. 
+d2 <- seq(as.Date("2020-02-27"), as.Date("2020-03-05"), by=8) 
+d3 <- seq(as.Date("2020-03-06"), as.Date("2020-10-29"), by=7) 
+dates.2020 <- c(d1, d2, d3)
+#China 2019 urban
+location.2019 <- rep("China", length.out = length(top.10.2019.raster.list[[11]]))
+year.2019 <- rep("2019", length.out = length(top.10.2019.raster.list[[11]]))
+x.2019 <- top.10.2019.raster.list[[11]]
+country.sf <- rep(top.10.urban.shp.list[[11]], length.out = length(top.10.2019.raster.list[[11]]))
+date.2019 <- as.Date(dates.2019)
+china.urban.2019.weekly.df <- purrr::pmap_dfr(list(location.2019, year.2019, x.2019, country.sf, date.2019), extract.2019.fxn)
+
+#China 2020 urban
+location.2020 <- rep("China", length.out = length(top.10.2020.raster.list[[11]]))
+year.2020 <- rep("2020", length.out = length(top.10.2020.raster.list[[11]]))
+x.2020 <- top.10.2020.raster.list[[11]]
+country.sf <- rep(top.10.urban.shp.list[[11]], length.out = length(top.10.2020.raster.list[[11]]))
+date.2020 <- as.Date(dates.2020)
+china.urban.2020.weekly.df <- purrr::pmap_dfr(list(location.2020, year.2020, x.2020, country.sf, date.2020), extract.2020.fxn)
+
+china.urban.weekly.df <- rbind(china.urban.2019.weekly.df, china.urban.2020.weekly.df) 
+write.csv(china.urban.weekly.df, file = 'time_series_csv/china.urban.weekly.NO2.csv')
+rm(china.urban.weekly.df, china.urban.2019.weekly.df, china.urban.2020.weekly.df)
+
+#China 2019 rural
+country.sf <- rep(top.10.rural.shp.list[[11]], length.out = length(top.10.2019.raster.list[[11]]))
+china.rural.2019.weekly.df <- purrr::pmap_dfr(list(location.2019, year.2019, x.2019, country.sf, date.2019), extract.2019.fxn)
+
+#China 2020 rural
+country.sf <- rep(top.10.rural.shp.list[[1]], length.out = length(top.10.2020.raster.list[[11]]))
+china.rural.2020.weekly.df <- purrr::pmap_dfr(list(location.2020, year.2020, x.2020, country.sf, date.2020), extract.2020.fxn)
+
+china.rural.weekly.df <- rbind(china.rural.2019.weekly.df, china.rural.2020.weekly.df) 
+write.csv(china.rural.weekly.df, file = 'time_series_csv/china.rural.weekly.NO2.csv')
+rm(china.rural.weekly.df, china.rural.2019.weekly.df, china.rural.2020.weekly.df)
 ```
 
 #### Urban areas only interrupted time series analysis.
@@ -1641,6 +2116,7 @@ NO2.vs.deaths
 
 #### US urban areas only interrupted time series analysis. 
 ```{r, eval = FALSE}
+#DELETE LATER
 us.urban.sf <- us.urban.sf %>% filter(UATYP10=="U")
 
 #2019 data. 
@@ -1676,7 +2152,7 @@ all.files=TRUE, full.names=FALSE)
 
 #Creates list of dates to call in function. 
 dates.2020 <- seq(as.Date("2019-12-16"), as.Date("2021-01-03"), by=7) #List of dates starting Dec 30th 2019. 
-dates.2020.mod <- seq(as.Date("2018-12-16"), as.Date("2018-12-29"), by = 7)
+
 #Function to make data frame for weekly average NO2 concentration. 
 raster.extract.fxn <- function(x, y) {
   r <- raster(paste0("US_time_analysis_2020/", x)) %>%
@@ -1739,6 +2215,7 @@ ylim(0, 4.6E-5) +
 
 #### US rural areas only interrupted time series analysis. 
 ```{r, eval = FALSE}
+#DELETE LATER
 us.urban.sp <- as(us.urban.sf, Class = "Spatial")
 us.rural.sp <- gDifference(wrld_simpl[wrld_simpl$NAME == "United States", ], us.urban.sp)
 us.rural.sf <- st_as_sf(us.rural.sp)
@@ -1870,277 +2347,6 @@ ggsave("US_NO2_vs_cases.pdf", us.NO2.vs.cases)
 us.NO2.vs.cases 
 ```
 
-#### ITS analysis: US urban Jan-Dec. 
-```{r, eval = TRUE}
-# Install packages required for the analysis (uncomment if needed)
-#install.packages("lmtest") ; install.packages("Epi")
-#install.packages("tsModel"); install.packages("vcd")
-
-# load the packages
-library(foreign)
-library(tsModel) 
-library(lmtest) 
-library(Epi)
-library(splines) 
-library(vcd) 
-library(pander)
-
-col = c("#084594","#990000")
-
-# read data
-head(us.urban.weekly.df)
-
-#main plot
-year_scatter_plot <- function(data,ylim,xlockdown,pollutant,model){
-  datanew <- data.frame(pollution_estimate=mean(data$NO2_Concentration),covid_lockdown=rep(c(0,1,0,1),c(120,410,120,410)), no_of_weeks=c((1:530/10), (1:530/10)), year2020 = rep(c(0,1),c(530,530)))
-
-  # We generate predicted values based on the model in order to create a plot
-  # need to reconfirm the mean multiplier value ; using 10 for now
-  pred1 <- predict(model,type="response",datanew) #/mean(data$pollution_estimate)*10
-
-  #This can then be plotted along with a scatter graph (see above)
-  #plot for 2015-2019
-  data.2019 <- data %>% filter(., year2020 == 0) %>% select(., NO2_Concentration, no_of_weeks) 
-
-  plot(NO2_Concentration ~ no_of_weeks, data = data.2019,
-       type="n",ylim=c(00,ylim),xlab="Weeks", ylab=paste0(pollutant," estimates"),
-       bty="l")
-  rect(xlockdown,0,53,ylim,col=grey(0.9),border=F)
-  points(NO2_Concentration ~ no_of_weeks,data = data.2019,cex=0.7,pch=16,col=alpha(col[1],0.5))
-  legend(47, 0.5E-5, legend=c("2019", "2020"), col=alpha(col,0.5),pch=16,cex=0.7)
-  
-  #plot for 2020
-   data.2020 <- data %>% filter(., year2020 == 1) %>% select(., NO2_Concentration, no_of_weeks) 
-  par(new=TRUE)
-  plot(NO2_Concentration ~ no_of_weeks,data = data.2020, type="n",ylim=c(00,ylim),xlab="Weeks", ylab=paste0(pollutant," estimates"), bty="l")
-  points(NO2_Concentration ~ no_of_weeks,data = data.2020,cex=0.7,pch=16,col=alpha(col[2],0.5))
-  #Add prediction lines
-  lines(datanew$no_of_weeks[1:530],pred1[1:530],col=col[1],lwd = 1.5)
-  lines(datanew$no_of_weeks[531:1060],pred1[531:1060],col=col[2],lwd = 1.5)
-  #legend(91, 29.8, legend=c("2015-2019", "2020"), col=col,lty=1)
-  title(paste0(pollutant," for Jan to Dec 2020 vs 2015-19"))
-
-  # to plot the counterfactual scenario we create a data frame as if covid lockdown (the intervention) was never being implemented
-    datanew <- data.frame(pollution_estimate=mean(data$NO2_Concentration),covid_lockdown=0, no_of_weeks=c((1:530/10), (1:530/10)), year2020 = rep(c(0,1),c(530,530)))
-    
-  # generate predictions under the counterfactual scenario and add it to the plot
-  pred1b <- predict(model,datanew,type="response") #/mean(data$pollution_estimate)*10
-  lines(datanew$no_of_weeks[1:530],pred1b[1:530],lty=2,col=col[1],lwd = 1.5)
-  lines(datanew$no_of_weeks[531:1060],pred1b[531:1060],col=col[2],lty=2,lwd = 1.5)
-}
-
-#Data for NO2
-data.NO2.19 <- us.urban.weekly.df %>%
-            dplyr::filter(Period == 2019) %>%
-            dplyr::mutate(covid_lockdown = rep(c(0,1),c(12,40)),year2020 = 0,no_of_weeks = 1:52) 
-
-data.NO2.19[nrow(data.NO2.19)+1,] <- NA
-data.NO2.19[53,8] = 53
-data.NO2.19[53,6] = 1
-data.NO2.19[53,7] = 0
-
-data.NO2.20 <- us.urban.weekly.df %>%
-            dplyr::filter(Period == 2020) %>%
-            dplyr::mutate(covid_lockdown = rep(c(0,1),c(12,41)),year2020 = 1,no_of_weeks = seq(1:53))
-          
-
-data.NO2 <- rbind(data.NO2.19,data.NO2.20)
-#data.NO2$no_of_weeks <- seq(1:nrow(data.NO2))
-
-#tabulate pollution before and after lockdown
-summary(data.NO2)
-summary(data.NO2$NO2_Concentration[data.NO2$covid_lockdown==0])
-summary(data.NO2$NO2_Concentration[data.NO2$covid_lockdown==1])
-
-#OLS regression
-year.model.us.urban <- lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020 +  harmonic(no_of_weeks,2,52), data=data.NO2) 
-#year.model.us.urban <- lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020, data=data.NO2) 
-summary(year.model.us.urban)
-
-#plot
-year_scatter_plot(data.NO2,ylim=5E-5, xlockdown=12,pollutant="NO2",model=year.model.us.urban)
-```
-
-#### ITS analysis: US urban Dec-June
-```{r, eval = TRUE}
-# Install packages required for the analysis (uncomment if needed)
-#install.packages("lmtest") ; install.packages("Epi")
-#install.packages("tsModel"); install.packages("vcd")
-
-# load the packages
-library(foreign)
-library(tsModel) 
-library(lmtest) 
-library(Epi)
-library(splines) 
-library(vcd) 
-library(pander)
-
-col = c("#084594","#990000")
-
-# read data
-head(us.urban.weekly.df)
-
-#Data for NO2
-data.NO2.19 <- us.urban.weekly.df %>%
-            dplyr::filter(Period == 2019) 
-data.NO2.19 <- data.NO2.19[data.NO2.19$Date >= "2019-12-17" & data.NO2.19$Date <= "2020-06-10", ] %>%
-  dplyr::mutate(covid_lockdown =  rep(c(0,1),c(13,13)),year2020 = 0,no_of_weeks = 1:26) 
-data.NO2.19[nrow(data.NO2.19)+1,] <- NA
-data.NO2.19[27,8] = 27
-data.NO2.19[27,6] = 1
-data.NO2.19[27,7] = 0
-
-data.NO2.20 <- us.urban.weekly.df %>%
-            dplyr::filter(Period == 2020) 
-data.NO2.20 <- data.NO2.20[data.NO2.20$Date >= "2019-12-16" & data.NO2.20$Date <= "2020-06-15", ] %>%
-    dplyr::mutate(covid_lockdown = rep(c(0,1),c(13,14)),year2020 = 1,no_of_weeks = seq(1:27))
-
-data.NO2 <- rbind(data.NO2.19,data.NO2.20)
-#data.NO2$no_of_weeks <- seq(1:nrow(data.NO2))
-
-#ggplot2
-scatter_gplot <- function(data,ylim, xintercept,location){
-  #convert year to factor 
-  data$year2020 <- as.factor(data$year2020)
-
-  #plot
-  ggplot(data, aes(y=NO2_Concentration,x=no_of_weeks,colour=year2020)) + 
-  geom_point(size=2) + 
-  scale_color_manual(values=col) + 
-  #add line to denote lockdown
-  geom_vline(xintercept=xintercept, linetype="twodash",colour="darkred",size=1.4) +
-  ylim(0,ylim) +
-  labs(x="Weeks", y=paste(location,"NO2 estimates in 2019 vs 2020"),colour = "Year2020") + 
-  theme_bw() +
-  theme(legend.title = element_text(size=9)) 
-}
-scatter_gplot(data.NO2, 5E-5, 13, "Urban U.S.")
-
-#main plot
-period_scatter_plot <- function(data,ylim,xlockdown,location,model){
-    datanew <- data.frame(NO2_Concentration=mean(data$NO2_Concentration),covid_lockdown=rep(c(0,1,0,1),c(130,140,130,140)), no_of_weeks=c((1:270/10), (1:270/10)), year2020 = rep(c(0,1),c(270, 270)))
-
-  # We generate predicted values based on the model in order to create a plot
-  # need to reconfirm the mean multiplier value ; using 10 for now
-  pred1 <- predict(model,datanew, type="response") #/mean(data$pollution_estimate)*10
-
-  #This can then be plotted along with a scatter graph (see above)
-  #plot for 2015-2019
-  data.2019 <- data %>% filter(., year2020 == 0) %>% select(., NO2_Concentration, no_of_weeks) 
-
-  plot(NO2_Concentration ~ no_of_weeks, data = data.2019,
-       type="n",ylim=c(00,ylim),xlab="Weeks", ylab=paste0("NO2 estimates"),
-       bty="l")
-  rect(xlockdown,0,27,ylim,col=grey(0.9),border=F)
-  points(NO2_Concentration ~ no_of_weeks,data = data.2019,cex=0.7,pch=16,col=alpha(col[1],0.5))
-  legend(19, 0.5E-5, legend=c("2019", "2020"), col=alpha(col,0.5),pch=16,cex=0.7)
-  
-  #plot for 2020
-   data.2020 <- data %>% filter(., year2020 == 1) %>% select(., NO2_Concentration, no_of_weeks) 
-  par(new=TRUE)
-  plot(NO2_Concentration ~ no_of_weeks,data = data.2020, type="n",ylim=c(00,ylim),xlab="Weeks", ylab=paste0("NO2 estimates"), bty="l")
-  points(NO2_Concentration ~ no_of_weeks,data = data.2020,cex=0.7,pch=16,col=alpha(col[2],0.5))
-  #Add prediction lines
-  lines(datanew$no_of_weeks[1:270],pred1[1:270],col=col[1],lwd = 1.5) #regular model, 2019
-  lines(datanew$no_of_weeks[271:540],pred1[271:540],col=col[2],lwd = 1.5) #regular model, 2020
-  #legend(91, 29.8, legend=c("2015-2019", "2020"), col=col,lty=1)
-  title(paste(location,"NO2, 19th Dec to 19th June 2020 vs 2019"))
-
-  # to plot the counterfactual scenario we create a data frame as if covid lockdown (the intervention) was never being implemented
-    datanew.ctr <- data.frame(NO2_Concentration=mean(data$NO2_Concentration),covid_lockdown=0, no_of_weeks=c((1:270/10), (1:270/10)), year2020 = rep(c(0,1),c(270, 270)))
-
-  # generate predictions under the counterfactual scenario and add it to the plot
-  pred1b <- predict(model,datanew.ctr, type="response") #/mean(data$pollution_estimate)*10
-   
-  lines(datanew.ctr$no_of_weeks[1:270],pred1b[1:270],col=col[1],lty=2,lwd = 1.5)
-  lines(datanew.ctr$no_of_weeks[271:540],pred1b[271:540],col=col[2],lty=2,lwd = 1.5)
-}
-
-#tabulate pollution before and after lockdown
-summary(data.NO2)
-summary(data.NO2$NO2_Concentration[data.NO2$covid_lockdown==0])
-summary(data.NO2$NO2_Concentration[data.NO2$covid_lockdown==1])
-
-#OLS regression
-#period.model.us.urban <- lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020 +  harmonic(no_of_weeks,2,52), data=data.NO2) 
-period.model.us.urban <- lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020, data=data.NO2) 
-summary(period.model.us.urban)
-
-#plot
-period_scatter_plot(data.NO2,ylim=5E-5, xlockdown=13,location="Urban U.S.",model=period.model.us.urban)
-```
-
-#### ITS analysis: US rural Jan-Dec. 
-```{r, eval = TRUE}
-#Data for NO2
-rural.data.NO2.19 <- us.rural.weekly.df %>%
-            dplyr::filter(Period == 2019) %>%
-            dplyr::mutate(covid_lockdown = 0,year2020 = 0,no_of_weeks = 1:52) 
-
-rural.data.NO2.19[nrow(rural.data.NO2.19)+1,] <- NA
-rural.data.NO2.19[53,8] = 53
-rural.data.NO2.19[53,7] = 0
-
-rural.data.NO2.20 <- us.rural.weekly.df %>%
-            dplyr::filter(Period == 2020) %>%
-            dplyr::mutate(covid_lockdown = rep(c(0,1),c(12,41)),year2020 = 1,no_of_weeks = seq(1:53))
-          
-
-rural.data.NO2 <- rbind(rural.data.NO2.19,rural.data.NO2.20)
-#data.NO2$no_of_weeks <- seq(1:nrow(data.NO2))
-
-#tabulate pollution before and after lockdown
-summary(rural.data.NO2)
-summary(rural.data.NO2$NO2_Concentration[rural.data.NO2$covid_lockdown==0])
-summary(rural.data.NO2$NO2_Concentration[rural.data.NO2$covid_lockdown==1])
-
-#OLS regression
-year.model.us.rural <- lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020 +  harmonic(no_of_weeks,2,52), data=rural.data.NO2) 
-#year.model.us.rural <- lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020, data=rural.data.NO2) 
-summary(year.model.us.rural)
-
-#plot
-year_scatter_plot(rural.data.NO2,ylim=5E-5, xlockdown=12,location="Rural U.S.",model=year.model.us.rural)
-```
-
-### ITS analysis: US rural Dec-June
-```{r, eval = TRUE}
-scatter_gplot(rural.data.NO2, 5E-5, 13, "Rural U.S.")
-
-#Data for NO2
-rural.data.NO2.19 <- us.rural.weekly.df %>%
-            dplyr::filter(Period == 2019) 
-rural.data.NO2.19 <- rural.data.NO2.19[rural.data.NO2.19$Date >= "2019-12-17" & rural.data.NO2.19$Date <= "2020-06-10", ] %>%
-  dplyr::mutate(covid_lockdown =  rep(c(0,1),c(13,13)),year2020 = 0,no_of_weeks = 1:26) 
-rural.data.NO2.19[nrow(rural.data.NO2.19)+1,] <- NA
-rural.data.NO2.19[27,8] = 27
-rural.data.NO2.19[27,6] = 1
-rural.data.NO2.19[27,7] = 0
-
-rural.data.NO2.20 <- us.rural.weekly.df %>%
-            dplyr::filter(Period == 2020) 
-rural.data.NO2.20 <- rural.data.NO2.20[rural.data.NO2.20$Date >= "2019-12-16" & rural.data.NO2.20$Date <= "2020-06-15", ] %>%
-    dplyr::mutate(covid_lockdown = rep(c(0,1),c(13,14)),year2020 = 1,no_of_weeks = seq(1:27))
-          
-
-rural.data.NO2 <- rbind(rural.data.NO2.19,rural.data.NO2.20)
-#data.NO2$no_of_weeks <- seq(1:nrow(data.NO2))
-
-#tabulate pollution before and after lockdown
-summary(rural.data.NO2)
-summary(rural.data.NO2$NO2_Concentration[rural.data.NO2$covid_lockdown==0])
-summary(rural.data.NO2$NO2_Concentration[rural.data.NO2$covid_lockdown==1])
-
-#OLS regression
-#period.model.us.rural <- lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020 +  harmonic(no_of_weeks,2,52), data=data.NO2) 
-period.model.us.rural <- lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020, data=rural.data.NO2) 
-summary(period.model.us.rural)
-
-#plot
-period_scatter_plot(rural.data.NO2,ylim=5E-5, xlockdown=13,location="Rural U.S.",model=period.model.us.rural)
-```
-
 #### US time analysis: interrupted series time analysis data preparation. 
 ```{r, fig.width=10, fig.height=8, eval = TRUE}
 #Use function in other NO2_Exploratory Analysis to filter out each week from Jan-Dec 2019 and Jan-Dec 2020 for comparison.
@@ -2157,7 +2363,11 @@ us.rastlist.2019 <- list.files(path = "US_time_analysis_2019", pattern='.tif$',
 all.files=TRUE, full.names=FALSE)
 
 #Creates list of dates to call in function. 
-dates.2019 <- seq(as.Date("2018-12-31"), as.Date("2019-12-29"), by=7) #List of dates starting Dec 31 2018. 
+dates.2019 <- seq(as.Date("2018-12-03"), as.Date("2020-01-05"), by=7) #List of dates starting Dec 3 2018. 
+d1 <- seq(as.Date("2019-12-03"), as.Date("2020-02-24"), by=7) #List of dates starting Dec 2 2019. 
+d2 <- seq(as.Date("2020-02-25"), as.Date("2020-03-03"), by=8) 
+d3 <- seq(as.Date("2020-03-04"), as.Date("2021-01-05"), by=7) 
+dates.2020 <- c(d1, d2, d3)
 
 #Function to make data frame for weekly average NO2 concentration. 
 raster.extract.fxn <- function(x, y) {
@@ -2181,9 +2391,6 @@ US.2019.weekly.df <- purrr::map2_dfr(x, y, raster.extract.fxn)
 #2020 data.  
 us.rastlist.2020 <- list.files(path = "US_time_analysis_2020", pattern='.tif$', 
 all.files=TRUE, full.names=FALSE)
-
-#Creates list of dates to call in function. 
-dates.2020 <- seq(as.Date("2019-12-30"), as.Date("2021-01-03"), by=7) #List of dates starting Dec 30th 2019. 
 
 #Function to make data frame for weekly average NO2 concentration. 
 raster.extract.fxn <- function(x, y) {
@@ -2263,7 +2470,7 @@ china.rastlist.2019 <- list.files(path = "China_time_analysis_2019", pattern='.t
 all.files=TRUE, full.names=FALSE)
 
 #Creates list of dates to call in function. 
-dates.2019 <- seq(as.Date("2018-11-05"), as.Date("2019-11-10"), by=7) #List of dates starting Dec 31 2018. 
+dates.2019 <- seq(as.Date("2018-10-22"), as.Date("2019-11-10"), by=7) #List of dates starting Dec 31 2018.
 
 #Function to make data frame for weekly average NO2 concentration. 
 raster.extract.fxn <- function(x, y) {
@@ -2290,7 +2497,7 @@ china.rastlist.2020 <- list.files(path = "China_time_analysis_2020", pattern='.t
 all.files=TRUE, full.names=FALSE)
 
 #Creates list of dates to call in function. 
-dates.2020 <- seq(as.Date("2019-11-04"), as.Date("2020-11-08"), by=7) #List of dates starting Dec 30th 2019. 
+dates.2020 <- seq(as.Date("2019-10-21"), as.Date("2020-11-08"), by=7) #List of dates starting Dec 30th 2019. 
 
 #Function to make data frame for weekly average NO2 concentration. 
 raster.extract.fxn <- function(x, y) {
@@ -2873,3 +3080,5 @@ China_2021_change <- function(x, y) {
 }
 China_2021_change("China_NO2_2020-11-23_start.tif", "China_NO2_2021-01-23_start.tif")
 ```
+
+***
