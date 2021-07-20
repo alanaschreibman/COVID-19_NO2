@@ -1,0 +1,827 @@
+---
+title: "ITS Analysis: NO2 and COVID-19 Lockdown"
+author: "Alana Schreibman"
+date: "5/27/2021"
+output: 
+  html_document:
+    toc: true
+    toc_float: 
+        collapsed: true
+        smooth_scroll: true
+    depth: 3 
+    theme: cosmo
+    highlight: pygments
+---
+
+```{r global options, include = FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+```
+
+***
+
+# Interrupted Time Series Analysis
+```{r, eval = TRUE}
+# Install packages required for the analysis (uncomment if needed)
+#install.packages("lmtest") ; install.packages("Epi")
+#install.packages("tsModel"); install.packages("vcd")
+
+# load the packages
+library(foreign)
+library(tsModel) 
+library(lmtest) 
+library(Epi)
+library(splines) 
+library(vcd) 
+library(pander)
+library(dplyr)
+library(ggplot2)
+library(cowplot)
+```
+
+
+### Preparation of stringency index data. 
+```{r, eval = TRUE}
+stringency.df <- read.csv(url("https://raw.githubusercontent.com/OxCGRT/covid-policy-tracker/master/data/OxCGRT_latest.csv"), na.strings = c("", "NA"), header = TRUE)
+stringency.df$Date <- as.factor(stringency.df$Date) %>% as.Date(stringency.df$Date, format = "%Y%m%d")
+stringency.df.filtered <- stringency.df %>%
+                  select(Country_Name = 1, Date = 6, Stringency_Index = 42) %>% #Renamed variables and filtered to keep only those of interest. 
+                  filter(Date >= "2020-01-23" & Date <= "2020-05-31") #Filtered out all but most recent date (most recent date is a running sum of total cases).
+stringency.df.filtered <- aggregate(Stringency_Index ~ Country_Name, stringency.df.filtered, mean) %>% arrange(desc(Stringency_Index))
+```
+
+
+## ITS Descriptive Plots
+### ITS plotting general function. 
+```{r, eval = TRUE}
+NO2.df.filter.fxn <- function(location, type) {
+  weekly.df <- read.csv(file = paste0("time_series_csv/", location, ".", type, ".weekly.NO2.csv")) 
+  weekly.df$Date <- as.Date(weekly.df$Date)
+  weekly.df$Period <- as.factor(weekly.df$Period)
+  weekly.df
+}
+
+ITS.plot.fxn <- function(df, location, date.start, date.lockdown.start, date.lockdown.end, date.end) {
+  ggplot(df, aes(x = Date, y = NO2_Concentration, group = Period, color = Period)) +
+  geom_line(size = 0.75) + 
+  theme_bw() +
+  theme(legend.key.size = unit(1, 'cm'),
+        plot.title = element_text(size=22),
+        legend.position="right",
+        legend.title = element_text(size=14),
+        legend.text = element_text(size=10),
+        axis.title=element_text(size = 10),
+        axis.text.y=element_text(size=10),
+        axis.text.x=element_text(size=10,angle=90, hjust=1)) +
+  labs(fill = "Year of Measured Pollution") +
+  ggtitle(paste(location, "NO2 in 2019 vs 2020")) +
+  ylab("NO2 Concentration (mol/m^2)") +
+  scale_x_date(date_labels = "%b",date_breaks = "1 month",expand=c(0,0),limits=c(as.Date(date.start,format="%Y-%m-%d"),as.Date(date.end,format="%Y-%m-%d"))) +
+ylim(0, 2.4E-4) +
+  
+  #Pre-lockdown
+  geom_rect(data=df,aes(xmin=as.Date(date.start,format="%Y-%m-%d"),xmax=as.Date(date.lockdown.start,format="%Y-%m-%d"),ymin=2.3E-4,ymax=2.4E-4),fill = "#c0c0c0",color = NA, alpha=0.02) +
+  geom_text(data=df,aes(x=mean.Date(as.Date(c(date.start, date.lockdown.start), format=c("%Y-%m-%d"))) ,y=2.35E-4),label="Pre-Lockdown",color = "black", size = 2) +
+  geom_vline(data=df,xintercept = as.Date(date.lockdown.start,format="%Y-%m-%d"),linetype="dashed",colour="black",size=0.75,alpha=0.8) + 
+  #Lockdown 1
+  geom_rect(data=df,aes(xmin=as.Date(date.lockdown.start,format="%Y-%m-%d"),xmax=as.Date(date.lockdown.end,format="%Y-%m-%d"),ymin=2.3E-4,ymax=2.4E-4),fill = "#fa9796",color = NA,alpha=0.02) +
+  geom_text(data=df,aes(x=mean.Date(as.Date(c(date.lockdown.start, date.lockdown.end), format=c("%Y-%m-%d"))),y=2.35E-4),label="Lockdown 1", color = "black", size = 2) +
+  geom_vline(data=df,xintercept=as.Date(date.lockdown.end,format="%Y-%m-%d"),linetype="dashed",colour="black",size=0.75,alpha=0.8) + 
+  #Re-opening Green PHASE
+  geom_rect(data=df,aes(xmin=as.Date(date.lockdown.end,format="%Y-%m-%d"),xmax=as.Date(date.end,format="%Y-%m-%d"), ymin=2.3E-4,ymax=2.4E-4),fill = "#b5dea5",color = NA,alpha=0.02) +
+  geom_text(data=df,aes(x=mean.Date(as.Date(c(date.lockdown.end, date.end), format=c("%Y-%m-%d"))),y=2.35E-4),label="Re-Opening", color = "black", size = 2) +
+  scale_alpha_manual(values = c(0.4, 1.1)) + 
+  scale_color_manual(values = c("gray", "blue", "black"))
+}
+```
+
+
+### ITS plots by country
+```{r, fig.width=10, fig.height=10, eval = TRUE}
+#World
+#world.urban.weekly.df <- NO2.df.filter.fxn("world", "urban")
+#world.rural.weekly.df <- NO2.df.filter.fxn("world", "rural")
+
+#world.urban.plot <- ITS.plot.fxn(world.urban.weekly.df, "World Urban", "2019-12-01", "2020-01-30", "2020-07-01", "2020-12-24")
+#world.rural.plot <- ITS.plot.fxn(world.rural.weekly.df, "World Rural", "2019-12-01", "2020-01-30", "2020-07-01", "2020-12-24")
+#world.rural.vs.urban <- plot_grid(world.urban.plot, world.rural.plot, labels = c('A', 'B'), ncol = 1) 
+#ggsave("World_rural_vs_urban.pdf", world.rural.vs.urban)
+#world.rural.vs.urban 
+
+#Czechia
+czechia.urban.weekly.df <- NO2.df.filter.fxn("czechia", "urban")
+czechia.rural.weekly.df <- NO2.df.filter.fxn("czechia", "rural")
+
+czechia.urban.plot <- ITS.plot.fxn(czechia.urban.weekly.df, "Czechia Urban", "2019-12-01", "2020-03-16", "2020-04-12", "2020-12-24")
+czechia.rural.plot <- ITS.plot.fxn(czechia.rural.weekly.df, "Czechia Rural", "2019-12-01", "2020-03-16", "2020-04-12", "2020-12-24")
+czechia.rural.vs.urban <- plot_grid(czechia.urban.plot, czechia.rural.plot, labels = c('A', 'B'), ncol = 1) 
+ggsave("Czechia_rural_vs_urban.pdf", czechia.rural.vs.urban)
+czechia.rural.vs.urban 
+
+#Slovenia
+slovenia.urban.weekly.df <- NO2.df.filter.fxn("slovenia", "urban")
+slovenia.rural.weekly.df <- NO2.df.filter.fxn("slovenia", "rural")
+
+slovenia.urban.plot <- ITS.plot.fxn(slovenia.urban.weekly.df, "Slovenia Urban", "2019-12-01", "2020-03-16", "2020-05-15", "2020-12-24")
+slovenia.rural.plot <- ITS.plot.fxn(slovenia.rural.weekly.df, "Slovenia Rural", "2019-12-01", "2020-03-16", "2020-05-15", "2020-12-24")
+slovenia.rural.vs.urban <- plot_grid(slovenia.urban.plot, slovenia.rural.plot, labels = c('A', 'B'), ncol = 1) 
+ggsave("Slovenia_rural_vs_urban.pdf", slovenia.rural.vs.urban)
+slovenia.rural.vs.urban 
+
+#Sweden
+sweden.urban.weekly.df <- NO2.df.filter.fxn("sweden", "urban")
+sweden.rural.weekly.df <- NO2.df.filter.fxn("sweden", "rural")
+
+sweden.urban.plot <- ITS.plot.fxn(sweden.urban.weekly.df, "Sweden Urban", "2019-12-01", "2020-03-16", "2020-05-15", "2020-12-24") #No real lockdown end date, use May 15 as arbitrart date. 
+sweden.rural.plot <- ITS.plot.fxn(sweden.rural.weekly.df, "Sweden Rural", "2019-12-01", "2020-03-16", "2020-05-15", "2020-12-24")
+sweden.rural.vs.urban <- plot_grid(sweden.urban.plot, sweden.rural.plot, labels = c('A', 'B'), ncol = 1) 
+ggsave("Sweden_rural_vs_urban.pdf", sweden.rural.vs.urban)
+sweden.rural.vs.urban 
+
+#Uruguay
+uruguay.urban.weekly.df <- NO2.df.filter.fxn("uruguay", "urban")
+uruguay.rural.weekly.df <- NO2.df.filter.fxn("uruguay", "rural")
+
+uruguay.urban.plot <- ITS.plot.fxn(uruguay.urban.weekly.df, "Uruguay Urban", "2019-12-01", "2020-03-13", "2020-05-04", "2020-12-24")
+uruguay.rural.plot <- ITS.plot.fxn(uruguay.rural.weekly.df, "Uruguay Rural", "2019-12-01", "2020-03-13", "2020-05-04", "2020-12-24")
+uruguay.rural.vs.urban <- plot_grid(uruguay.urban.plot, uruguay.rural.plot, labels = c('A', 'B'), ncol = 1) 
+ggsave("Uruguay_rural_vs_urban.pdf", uruguay.rural.vs.urban)
+uruguay.rural.vs.urban 
+
+#Lithuania
+lithuania.urban.weekly.df <- NO2.df.filter.fxn("lithuania", "urban")
+lithuania.rural.weekly.df <- NO2.df.filter.fxn("lithuania", "rural")
+
+lithuania.urban.plot <- ITS.plot.fxn(lithuania.urban.weekly.df, "Lithuania Urban", "2019-12-01", "2020-03-16", "2020-06-18", "2020-12-24")
+lithuania.rural.plot <- ITS.plot.fxn(lithuania.rural.weekly.df, "Lithuania Rural", "2019-12-01", "2020-03-16", "2020-06-18", "2020-12-24")
+lithuania.rural.vs.urban <- plot_grid(lithuania.urban.plot, lithuania.rural.plot, labels = c('A', 'B'), ncol = 1) 
+ggsave("Lithuania_rural_vs_urban.pdf", lithuania.rural.vs.urban)
+lithuania.rural.vs.urban 
+
+#U.S.
+us.urban.weekly.df <- NO2.df.filter.fxn("us", "urban")
+us.rural.weekly.df <- NO2.df.filter.fxn("us", "rural")
+
+us.urban.plot <- ITS.plot.fxn(us.urban.weekly.df, "U.S. Urban", "2019-12-01", "2020-03-19", "2020-06-05", "2020-12-24")
+us.rural.plot <- ITS.plot.fxn(us.rural.weekly.df, "U.S. Rural", "2019-12-01", "2020-03-19", "2020-06-05", "2020-12-24")
+us.rural.vs.urban <- plot_grid(us.urban.plot, us.rural.plot, labels = c('A', 'B'), ncol = 1) 
+ggsave("US_rural_vs_urban.pdf", us.rural.vs.urban)
+us.rural.vs.urban 
+
+#Netherlands
+netherlands.urban.weekly.df <- NO2.df.filter.fxn("netherlands", "urban")
+netherlands.rural.weekly.df <- NO2.df.filter.fxn("netherlands", "rural")
+
+netherlands.urban.plot <- ITS.plot.fxn(netherlands.urban.weekly.df, "Netherlands Urban", "2019-12-01", "2020-03-15", "2020-04-06", "2020-12-24")
+netherlands.rural.plot <- ITS.plot.fxn(netherlands.rural.weekly.df, "Netherlands Rural", "2019-12-01", "2020-03-15", "2020-04-06", "2020-12-24")
+netherlands.rural.vs.urban <- plot_grid(netherlands.urban.plot, netherlands.rural.plot, labels = c('A', 'B'), ncol = 1) 
+ggsave("Netherlands_rural_vs_urban.pdf", netherlands.rural.vs.urban)
+netherlands.rural.vs.urban 
+
+#Estonia
+estonia.urban.weekly.df <- NO2.df.filter.fxn("estonia", "urban")
+estonia.rural.weekly.df <- NO2.df.filter.fxn("estonia", "rural")
+
+estonia.urban.plot <- ITS.plot.fxn(estonia.urban.weekly.df, "Estonia Urban", "2019-12-01", "2020-03-13", "2020-05-17", "2020-12-24")
+estonia.rural.plot <- ITS.plot.fxn(estonia.rural.weekly.df, "Estonia Rural", "2019-12-01", "2020-03-13", "2020-05-17", "2020-12-24")
+estonia.rural.vs.urban <- plot_grid(estonia.urban.plot, estonia.rural.plot, labels = c('A', 'B'), ncol = 1) 
+ggsave("Estonia_rural_vs_urban.pdf", estonia.rural.vs.urban)
+estonia.rural.vs.urban 
+
+#Argentina
+argentina.urban.weekly.df <- NO2.df.filter.fxn("argentina", "urban")
+argentina.rural.weekly.df <- NO2.df.filter.fxn("argentina", "rural")
+
+argentina.urban.plot <- ITS.plot.fxn(argentina.urban.weekly.df, "Argentina Urban", "2019-12-01", "2020-03-20", "2020-05-10", "2020-12-24")
+argentina.rural.plot <- ITS.plot.fxn(argentina.rural.weekly.df, "Argentina Rural", "2019-12-01", "2020-03-20", "2020-05-10", "2020-12-24")
+argentina.rural.vs.urban <- plot_grid(argentina.urban.plot, argentina.rural.plot, labels = c('A', 'B'), ncol = 1) 
+ggsave("Argentina_rural_vs_urban.pdf", argentina.rural.vs.urban)
+argentina.rural.vs.urban 
+
+#Israel
+israel.urban.weekly.df <- NO2.df.filter.fxn("israel", "urban")
+israel.rural.weekly.df <- NO2.df.filter.fxn("israel", "rural")
+
+israel.urban.plot <- ITS.plot.fxn(israel.urban.weekly.df, "Israel Urban", "2019-12-01", "2020-03-20", "2020-05-10", "2020-12-24")
+israel.rural.plot <- ITS.plot.fxn(israel.rural.weekly.df, "Israel Rural", "2019-12-01", "2020-03-20", "2020-05-10", "2020-12-24")
+israel.rural.vs.urban <- plot_grid(israel.urban.plot, israel.rural.plot, labels = c('A', 'B'), ncol = 1) 
+ggsave("Israel_rural_vs_urban.pdf", israel.rural.vs.urban)
+israel.rural.vs.urban 
+
+#China
+china.urban.weekly.df <- NO2.df.filter.fxn("china", "urban")
+china.rural.weekly.df <- NO2.df.filter.fxn("china", "rural")
+
+china.urban.plot <- ITS.plot.fxn(china.urban.weekly.df, "China Urban", "2019-10-31", "2020-01-23", "2020-04-08", "2020-11-01")
+china.rural.plot <- ITS.plot.fxn(china.rural.weekly.df, "China Rural", "2019-10-31", "2020-01-23", "2020-04-08", "2020-11-01")
+china.rural.vs.urban <- plot_grid(china.urban.plot, china.rural.plot, labels = c('A', 'B'), ncol = 1) 
+ggsave("China_rural_vs_urban.pdf", china.rural.vs.urban)
+china.rural.vs.urban
+
+#Italy
+italy.urban.weekly.df <- NO2.df.filter.fxn("italy", "urban")
+italy.rural.weekly.df <- NO2.df.filter.fxn("italy", "rural")
+
+italy.urban.plot <- ITS.plot.fxn(italy.urban.weekly.df, "Italy Urban", "2019-12-01", "2020-03-09", "2020-05-18", "2020-12-24")
+italy.rural.plot <- ITS.plot.fxn(italy.rural.weekly.df, "Italy Rural", "2019-12-01", "2020-03-09", "2020-05-18", "2020-12-24")
+italy.rural.vs.urban <- plot_grid(italy.urban.plot, italy.rural.plot, labels = c('A', 'B'), ncol = 1) 
+ggsave("Italy_rural_vs_urban.pdf", italy.rural.vs.urban)
+italy.rural.vs.urban 
+
+#Iraq
+iraq.urban.weekly.df <- NO2.df.filter.fxn("iraq", "urban")
+iraq.rural.weekly.df <- NO2.df.filter.fxn("iraq", "rural")
+
+iraq.urban.plot <- ITS.plot.fxn(iraq.urban.weekly.df, "Iraq Urban", "2019-12-01", "2020-04-04", "2020-05-18", "2020-12-24") #End date is uncertain, seems to be flux of lockdown and no lockdown depending on holidays. 
+iraq.rural.plot <- ITS.plot.fxn(iraq.rural.weekly.df, "Iraq Rural", "2019-12-01", "2020-04-04", "2020-05-18", "2020-12-24")
+iraq.rural.vs.urban <- plot_grid(iraq.urban.plot, iraq.rural.plot, labels = c('A', 'B'), ncol = 1) 
+ggsave("Iraq_rural_vs_urban.pdf", iraq.rural.vs.urban)
+iraq.rural.vs.urban 
+
+#India
+india.urban.weekly.df <- NO2.df.filter.fxn("india", "urban")
+india.rural.weekly.df <- NO2.df.filter.fxn("india", "rural")
+
+india.urban.plot <- ITS.plot.fxn(india.urban.weekly.df, "India Urban", "2019-12-01", "2020-03-24", "2020-05-31", "2020-12-24") #End date is uncertain, seems to be flux of lockdown and no lockdown depending on holidays. 
+india.rural.plot <- ITS.plot.fxn(india.rural.weekly.df, "India Rural", "2019-12-01", "2020-03-24", "2020-05-31", "2020-12-24")
+india.rural.vs.urban <- plot_grid(india.urban.plot, india.rural.plot, labels = c('A', 'B'), ncol = 1) 
+ggsave("India_rural_vs_urban.pdf", india.rural.vs.urban)
+india.rural.vs.urban 
+```
+
+
+## ITS Analysis
+### Prepare general functions for ITS analysis. 
+```{r, eval = TRUE}
+col = c("#084594","#990000")
+
+#Function to filter NO2 data and make df for plotting. 
+NO2.df.filter.fxn <- function(location, type, date.start, date.end) {
+  weekly.df <- read.csv(file = paste0("time_series_csv/", location, ".", type, ".weekly.NO2.csv")) 
+  weekly.df$Date <- as.Date(weekly.df$Date)
+  weekly.df$Period <- as.factor(weekly.df$Period)
+  NO2.19 <-  weekly.df %>% dplyr::filter(Period == 2019) 
+  NO2.19 <- NO2.19[NO2.19$Date >= date.start & NO2.19$Date <= date.end, ] %>%
+    dplyr::mutate(covid_lockdown = rep(c(0,1),c(12,12)),year2020 = 0,no_of_weeks = seq(1:24))
+  NO2.20 <- weekly.df %>% dplyr::filter(Period == 2020) 
+  NO2.20 <- NO2.20[NO2.20$Date >= date.start & NO2.20$Date <= date.end, ] %>%
+    dplyr::mutate(covid_lockdown = rep(c(0,1),c(12,12)),year2020 = 1,no_of_weeks = seq(1:24))
+  NO2.df <- rbind(NO2.19,NO2.20)
+  NO2.df
+}
+
+#ggplot2 scatter plot for observation
+scatter_gplot <- function(data,ylim, xintercept,location){
+  #convert year to factor 
+  data$year2020 <- as.factor(data$year2020)
+
+  #plot
+  ggplot(data, aes(y=NO2_Concentration,x=no_of_weeks,colour=year2020)) + 
+  geom_point(size=2) + 
+  scale_color_manual(values=col) + 
+  #add line to denote lockdown
+  geom_vline(xintercept=xintercept, linetype="twodash",colour="darkred",size=1.4) +
+  ylim(0,ylim) +
+  labs(x="Weeks", y=paste(location,"NO2 estimates in 2019 vs 2020"),colour = "Year2020") + 
+  theme_bw() +
+  theme(legend.title = element_text(size=9)) 
+}
+
+#main plot
+period_scatter_plot <- function(data,ylim,xlockdown,location,date.start,date.end,model){
+    datanew <- data.frame(NO2_Concentration=mean(data$NO2_Concentration),covid_lockdown=rep(c(0,1,0,1),c(120,120,120,120)), no_of_weeks=c((1:240/10), (1:240/10)), year2020 = rep(c(0,1),c(240, 240)))
+
+  # We generate predicted values based on the model in order to create a plot
+  # need to reconfirm the mean multiplier value ; using 10 for now
+  pred1 <- predict(model,datanew, type="response") #/mean(data$pollution_estimate)*10
+
+  #This can then be plotted along with a scatter graph (see above)
+  #plot for 2015-2019
+  data.2019 <- data %>% filter(., year2020 == 0) %>% select(., NO2_Concentration, no_of_weeks) 
+
+  plot(NO2_Concentration ~ no_of_weeks, data = data.2019,
+       type="n",ylim=c(00,ylim),xlab="Date", ylab=paste0("NO2 estimates"),
+       bty="l", xaxt="n")
+  rect(xlockdown,0,24,ylim,col=grey(0.9),border=F)
+  points(NO2_Concentration ~ no_of_weeks,data = data.2019,cex=0.7,pch=16,col=alpha(col[1],0.5))
+  legend("topright", inset=.05, legend=c("2019", "2020"), col=alpha(col,0.5),pch=16,cex=0.7)
+  
+  #plot for 2020
+   data.2020 <- data %>% filter(., year2020 == 1) %>% select(., NO2_Concentration, no_of_weeks) 
+  par(new=TRUE, font.axis=2)
+  plot(NO2_Concentration ~ no_of_weeks,data = data.2020, type="n",ylim=c(00,ylim),xlab="Date", ylab=paste0("NO2 estimates"), bty="l", xaxt="n")
+  points(NO2_Concentration ~ no_of_weeks,data = data.2020,cex=0.7,pch=16,col=alpha(col[2],0.5))
+  date.list <- data$Date 
+  date.list <- date.list[1:27]
+  date.list.seq <- date.list[seq(1, length(date.list), 5)]
+  axis(1,at=c(0,5,10,15,20,25),labels=date.list.seq)
+  #Add prediction lines
+  lines(datanew$no_of_weeks[1:240],pred1[1:240],col=col[1],lwd = 1.5) #regular model, 2019
+  lines(datanew$no_of_weeks[241:480],pred1[241:480],col=col[2],lwd = 1.5) #regular model, 2020
+  title(paste(location,"NO2,", date.start, "to", date.end, "2019 vs 2020"))
+
+  # to plot the counterfactual scenario we create a data frame as if covid lockdown (the intervention) was never being implemented
+    datanew.ctr <- data.frame(NO2_Concentration=mean(data$NO2_Concentration),covid_lockdown=0, no_of_weeks=c((1:240/10), (1:240/10)), year2020 = rep(c(0,1),c(240, 240)))
+
+  # generate predictions under the counterfactual scenario and add it to the plot
+  pred1b <- predict(model,datanew.ctr, type="response") #/mean(data$pollution_estimate)*10
+   
+  lines(datanew.ctr$no_of_weeks[1:240],pred1b[1:240],col=col[1],lty=2,lwd = 1.5) #counterfactual model, 2019
+  lines(datanew.ctr$no_of_weeks[241:480],pred1b[241:480],col=col[2],lty=2,lwd = 1.5) #counterfactual model, 2020
+}
+```
+
+
+### World
+#### ITS Analysis: World urban and rural Dec-June
+```{r, eval = FALSE}
+#Urban
+world.urban.NO2 <- NO2.df.filter.fxn("world", "urban", as.Date("2019-11-07"), as.Date("2020-04-17"))
+#Scatter plot
+scatter_gplot(world.urban.NO2, 10E-5, 12, "Urban World")
+#Tabulate pollution before and after lockdown
+summary(world.urban.NO2)
+summary(world.urban.NO2$NO2_Concentration[world.urban.NO2$covid_lockdown==0])
+summary(world.urban.NO2$NO2_Concentration[world.urban.NO2$covid_lockdown==1])
+#OLS regression
+period.model.world.urban <- lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020, data=world.urban.NO2) 
+summary(period.model.world.urban)
+#Plot
+period_scatter_plot(world.urban.NO2,ylim=10E-5, xlockdown=12,location="Urban World",date.start="Nov 7th", date.end="April 17th",model=period.model.world.urban) 
+
+#Rural
+world.rural.NO2 <- NO2.df.filter.fxn("world", "rural", as.Date("2019-11-07"), as.Date("2020-04-17"))
+#Scatter plot
+scatter_gplot(world.rural.NO2, 10E-5, 12, "Rural World")
+#Tabulate pollution before and after lockdown
+summary(world.rural.NO2)
+summary(world.rural.NO2$NO2_Concentration[world.rural.NO2$covid_lockdown==0])
+summary(world.rural.NO2$NO2_Concentration[world.rural.NO2$covid_lockdown==1])
+#OLS regression
+period.model.world.rural <- lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020, data=world.rural.NO2) 
+summary(period.model.world.rural)
+#Plot
+period_scatter_plot(world.rural.NO2,ylim=10E-5, xlockdown=12,location="Rural World",date.start="Nov 7th", date.end="April 17th",model=period.model.world.rural)
+```
+
+
+### Czechia
+#### ITS Analysis: Czechia urban and rural Dec-June
+```{r, eval = TRUE}
+#Urban
+czechia.urban.NO2 <- NO2.df.filter.fxn("czechia", "urban", as.Date("2019-12-22"), as.Date("2020-06-01"))
+#Scatter plot
+scatter_gplot(czechia.urban.NO2, 10E-5, 12, "Urban Czechia")
+#Tabulate pollution before and after lockdown
+summary(czechia.urban.NO2)
+summary(czechia.urban.NO2$NO2_Concentration[czechia.urban.NO2$covid_lockdown==0])
+summary(czechia.urban.NO2$NO2_Concentration[czechia.urban.NO2$covid_lockdown==1])
+#OLS regression
+period.model.czechia.urban <- lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020, data=czechia.urban.NO2) 
+summary(period.model.czechia.urban)
+#Plot
+period_scatter_plot(czechia.urban.NO2,ylim=10E-5, xlockdown=12,location="Urban Czechia",date.start="Dec 22nd", date.end="June 1st",model=period.model.czechia.urban) 
+
+#Rural
+czechia.rural.NO2 <- NO2.df.filter.fxn("czechia", "rural", as.Date("2019-12-22"), as.Date("2020-06-01"))
+#Scatter plot
+scatter_gplot(czechia.rural.NO2, 10E-5, 12, "Rural Czechia")
+#Tabulate pollution before and after lockdown
+summary(czechia.rural.NO2)
+summary(czechia.rural.NO2$NO2_Concentration[czechia.rural.NO2$covid_lockdown==0])
+summary(czechia.rural.NO2$NO2_Concentration[czechia.rural.NO2$covid_lockdown==1])
+#OLS regression
+period.model.czechia.rural <- lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020, data=czechia.rural.NO2) 
+summary(period.model.czechia.rural)
+#Plot
+period_scatter_plot(czechia.rural.NO2,ylim=10E-5, xlockdown=12,location="Rural Czechia",date.start="Dec 22nd", date.end="June 1st",model=period.model.czechia.rural)
+```
+
+
+### Slovenia
+#### ITS Analysis: Slovenia urban and rural Dec-June
+```{r, eval = TRUE}
+#Urban
+slovenia.urban.NO2 <- NO2.df.filter.fxn("slovenia", "urban", as.Date("2019-12-22"), as.Date("2020-06-01"))
+#Scatter plot
+scatter_gplot(slovenia.urban.NO2, 6E-5, 12, "Urban Slovenia")
+#Tabulate pollution before and after lockdown
+summary(slovenia.urban.NO2)
+summary(slovenia.urban.NO2$NO2_Concentration[slovenia.urban.NO2$covid_lockdown==0])
+summary(slovenia.urban.NO2$NO2_Concentration[slovenia.urban.NO2$covid_lockdown==1])
+#OLS regression
+period.model.slovenia.urban <- lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020, data=czechia.urban.NO2) 
+summary(period.model.slovenia.urban)
+#Plot
+period_scatter_plot(slovenia.urban.NO2,ylim=6E-5, xlockdown=12,location="Urban Slovenia",date.start="Dec 22nd", date.end="June 1st",model=period.model.slovenia.urban)
+
+#Rural
+slovenia.rural.NO2 <- NO2.df.filter.fxn("slovenia", "rural", as.Date("2019-12-22"), as.Date("2020-06-01"))
+#Scatter plot
+scatter_gplot(slovenia.rural.NO2, 6E-5, 12, "Rural Slovenia")
+#Tabulate pollution before and after lockdown
+summary(slovenia.rural.NO2)
+summary(slovenia.rural.NO2$NO2_Concentration[slovenia.rural.NO2$covid_lockdown==0])
+summary(slovenia.rural.NO2$NO2_Concentration[slovenia.rural.NO2$covid_lockdown==1])
+#OLS regression
+period.model.slovenia.rural <- lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020, data=slovenia.rural.NO2) 
+summary(period.model.slovenia.rural)
+#Plot
+period_scatter_plot(slovenia.rural.NO2,ylim=6E-5, xlockdown=12,location="Rural Slovenia",date.start="Dec 22nd", date.end="June 1st",model=period.model.slovenia.rural)
+```
+
+
+### Sweden
+#### ITS Analysis: Sweden urban and rural Dec-June
+```{r, eval = TRUE}
+#Urban
+sweden.urban.NO2 <- NO2.df.filter.fxn("sweden", "urban", as.Date("2019-12-22"), as.Date("2020-06-01"))
+#Scatter plot
+scatter_gplot(sweden.urban.NO2, 6E-5, 12, "Urban Sweden")
+#Tabulate pollution before and after lockdown
+summary(sweden.urban.NO2)
+summary(sweden.urban.NO2$NO2_Concentration[sweden.urban.NO2$covid_lockdown==0])
+summary(sweden.urban.NO2$NO2_Concentration[sweden.urban.NO2$covid_lockdown==1])
+#OLS regression
+period.model.sweden.urban <- lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020, data=sweden.urban.NO2) 
+summary(period.model.sweden.urban)
+#Plot
+period_scatter_plot(sweden.urban.NO2,ylim=6E-5, xlockdown=12,location="Urban Sweden",date.start="Dec 22nd", date.end="June 1st",model=period.model.sweden.urban)
+
+#Rural
+sweden.rural.NO2 <- NO2.df.filter.fxn("sweden", "rural", as.Date("2019-12-22"), as.Date("2020-06-01"))
+#Scatter plot
+scatter_gplot(sweden.rural.NO2, 6E-5, 12, "Rural Sweden")
+#Tabulate pollution before and after lockdown
+summary(sweden.rural.NO2)
+summary(sweden.rural.NO2$NO2_Concentration[sweden.rural.NO2$covid_lockdown==0])
+summary(sweden.rural.NO2$NO2_Concentration[sweden.rural.NO2$covid_lockdown==1])
+#OLS regression
+period.model.sweden.rural <- lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020, data=sweden.rural.NO2) 
+summary(period.model.sweden.rural)
+#Plot
+period_scatter_plot(sweden.rural.NO2,ylim=6E-5, xlockdown=12,location="Rural Sweden",date.start="Dec 22nd", date.end="June 1st",model=period.model.sweden.rural)
+```
+
+
+### Uruguay
+#### ITS Analysis: Uruguay urban and rural Dec-May
+```{r, eval = TRUE}
+#Urban
+uruguay.urban.NO2 <- NO2.df.filter.fxn("uruguay", "urban", as.Date("2019-12-19"), as.Date("2020-05-29"))
+#Scatter plot
+scatter_gplot(uruguay.urban.NO2, 3.5E-5, 12, "Urban Uruguay")
+#Tabulate pollution before and after lockdown
+summary(uruguay.urban.NO2)
+summary(uruguay.urban.NO2$NO2_Concentration[uruguay.urban.NO2$covid_lockdown==0])
+summary(uruguay.urban.NO2$NO2_Concentration[uruguay.urban.NO2$covid_lockdown==1])
+#OLS regression
+period.model.uruguay.urban <- lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020, data=uruguay.urban.NO2) 
+summary(period.model.uruguay.urban)
+#Plot
+period_scatter_plot(uruguay.urban.NO2,ylim=3.5E-5, xlockdown=12,location="Urban Uruguay",date.start="Dec 19th", date.end="May 29th",model=period.model.uruguay.urban)
+
+#Rural
+uruguay.rural.NO2 <- NO2.df.filter.fxn("uruguay", "rural", as.Date("2019-12-19"), as.Date("2020-05-29"))
+#Scatter plot
+scatter_gplot(uruguay.rural.NO2, 3.5E-5, 12, "Rural Uruguay")
+#Tabulate pollution before and after lockdown
+summary(uruguay.rural.NO2)
+summary(uruguay.rural.NO2$NO2_Concentration[uruguay.rural.NO2$covid_lockdown==0])
+summary(uruguay.rural.NO2$NO2_Concentration[uruguay.rural.NO2$covid_lockdown==1])
+#OLS regression
+period.model.uruguay.rural <- lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020, data=uruguay.rural.NO2) 
+summary(period.model.uruguay.rural)
+#Plot
+period_scatter_plot(uruguay.rural.NO2,ylim=3.5E-5, xlockdown=12,location="Rural Uruguay",date.start="Dec 19th", date.end="May 29th",model=period.model.uruguay.rural)
+```
+
+
+### Lithuania
+#### ITS Analysis: Lithuania urban and rural Dec-June
+```{r, eval = TRUE}
+#Urban
+lithuania.urban.NO2 <- NO2.df.filter.fxn("lithuania", "urban", as.Date("2019-12-22"), as.Date("2020-06-01"))
+#Scatter plot
+scatter_gplot(lithuania.urban.NO2, 5E-5, 12, "Urban Lithuania")
+#Tabulate pollution before and after lockdown
+summary(lithuania.urban.NO2)
+summary(lithuania.urban.NO2$NO2_Concentration[lithuania.urban.NO2$covid_lockdown==0])
+summary(lithuania.urban.NO2$NO2_Concentration[lithuania.urban.NO2$covid_lockdown==1])
+#OLS regression
+period.model.lithuania.urban <- lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020, data=lithuania.urban.NO2) 
+summary(period.model.lithuania.urban)
+#Plot
+period_scatter_plot(lithuania.urban.NO2,ylim=5E-5, xlockdown=12,location="Urban Lithuania",date.start="Dec 22nd", date.end="June 1st",model=period.model.lithuania.urban)
+
+#Rural
+lithuania.rural.NO2 <- NO2.df.filter.fxn("lithuania", "rural", as.Date("2019-12-22"), as.Date("2020-06-01"))
+#Scatter plot
+scatter_gplot(lithuania.rural.NO2, 5E-5, 12, "Rural Lithuania")
+#Tabulate pollution before and after lockdown
+summary(lithuania.rural.NO2)
+summary(lithuania.rural.NO2$NO2_Concentration[lithuania.rural.NO2$covid_lockdown==0])
+summary(lithuania.rural.NO2$NO2_Concentration[lithuania.rural.NO2$covid_lockdown==1])
+#OLS regression
+period.model.lithuania.rural <- lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020, data=lithuania.rural.NO2) 
+summary(period.model.lithuania.rural)
+#Plot
+period_scatter_plot(lithuania.rural.NO2,ylim=5E-5, xlockdown=12,location="Rural Lithuania",date.start="Dec 22nd", date.end="June 1st",model=period.model.lithuania.rural)
+```
+
+
+### U.S.
+#### ITS analysis: U.S. urban and rural Dec-June
+```{r, eval = TRUE}
+#Urban
+us.urban.NO2 <- NO2.df.filter.fxn("us", "urban", as.Date("2019-12-25"), as.Date("2020-06-04"))
+#Scatter plot
+scatter_gplot(us.urban.NO2, 5E-5, 12, "Urban U.S.")
+#Tabulate pollution before and after lockdown
+summary(us.urban.NO2)
+summary(us.urban.NO2$NO2_Concentration[us.urban.NO2$covid_lockdown==0])
+summary(us.urban.NO2$NO2_Concentration[us.urban.NO2$covid_lockdown==1])
+#OLS regression
+period.model.us.urban <- lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020, data=us.urban.NO2) 
+summary(period.model.us.urban)
+#Plot
+period_scatter_plot(us.urban.NO2,ylim=5E-5, xlockdown=12,location="Urban U.S.",date.start="Dec 25th", date.end="June 4th",model=period.model.us.urban)
+
+#Rural
+us.rural.NO2 <- NO2.df.filter.fxn("us", "rural", as.Date("2019-12-25"), as.Date("2020-06-04"))
+#Scatter plot
+scatter_gplot(us.rural.NO2, 5E-5, 12, "Rural U.S.")
+#Tabulate pollution before and after lockdown
+summary(us.rural.NO2)
+summary(us.rural.NO2$NO2_Concentration[us.rural.NO2$covid_lockdown==0])
+summary(us.rural.NO2$NO2_Concentration[us.rural.NO2$covid_lockdown==1])
+#OLS regression
+period.model.us.rural <- lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020, data=us.rural.NO2) 
+summary(period.model.us.rural)
+#Plot
+period_scatter_plot(us.rural.NO2,ylim=5E-5, xlockdown=12,location="Rural U.S.",date.start="Dec 25th", date.end="June 4th",model=period.model.us.rural)
+```
+
+
+### Netherlands
+#### ITS Analysis: Netherlands urban and rural Dec-May
+```{r, eval = TRUE}
+#Urban
+netherlands.urban.NO2 <- NO2.df.filter.fxn("netherlands", "urban", as.Date("2019-12-21"), as.Date("2020-05-31"))
+#Scatter plot
+scatter_gplot(netherlands.urban.NO2, 1.5E-4, 12, "Urban Netherlands")
+#Tabulate pollution before and after lockdown
+summary(netherlands.urban.NO2)
+summary(netherlands.urban.NO2$NO2_Concentration[netherlands.urban.NO2$covid_lockdown==0])
+summary(netherlands.urban.NO2$NO2_Concentration[netherlands.urban.NO2$covid_lockdown==1])
+#OLS regression
+period.model.netherlands.urban <- lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020, data=netherlands.urban.NO2) 
+summary(period.model.netherlands.urban)
+#Plot
+period_scatter_plot(netherlands.urban.NO2,ylim=1.5E-4, xlockdown=12,location="Urban Netherlands",date.start="Dec 21st", date.end="May 31st",model=period.model.netherlands.urban)
+
+#Rural
+netherlands.rural.NO2 <- NO2.df.filter.fxn("netherlands", "rural", as.Date("2019-12-21"), as.Date("2020-05-31"))
+#Scatter plot
+scatter_gplot(netherlands.rural.NO2, 1.5E-4, 12, "Rural Netherlands")
+#Tabulate pollution before and after lockdown
+summary(netherlands.rural.NO2)
+summary(netherlands.rural.NO2$NO2_Concentration[netherlands.rural.NO2$covid_lockdown==0])
+summary(netherlands.rural.NO2$NO2_Concentration[netherlands.rural.NO2$covid_lockdown==1])
+#OLS regression
+period.model.netherlands.rural <- lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020, data=netherlands.rural.NO2) 
+summary(period.model.netherlands.rural)
+max(netherlands.urban.NO2$NO2_Concentration)
+#Plot
+period_scatter_plot(netherlands.rural.NO2,ylim=1.5E-4, xlockdown=12,location="Rural Netherlands",date.start="Dec 21st", date.end="May 31st",model=period.model.netherlands.rural)
+```
+
+
+### Estonia
+#### ITS Analysis: Estonia urban and rural Dec-May
+```{r, eval = TRUE}
+#Urban
+estonia.urban.NO2 <- NO2.df.filter.fxn("estonia", "urban", as.Date("2019-12-19"), as.Date("2020-05-29"))
+#Scatter plot
+scatter_gplot(estonia.urban.NO2, 5E-5, 12, "Urban Estonia")
+#Tabulate pollution before and after lockdown
+summary(estonia.urban.NO2)
+summary(estonia.urban.NO2$NO2_Concentration[estonia.urban.NO2$covid_lockdown==0])
+summary(estonia.urban.NO2$NO2_Concentration[estonia.urban.NO2$covid_lockdown==1])
+#OLS regression
+period.model.estonia.urban <- lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020, data=estonia.urban.NO2) 
+summary(period.model.estonia.urban)
+#Plot
+period_scatter_plot(estonia.urban.NO2,ylim=5E-5, xlockdown=12,location="Urban Estonia",date.start="Dec 19th", date.end="May 29th",model=period.model.estonia.urban)
+
+#Rural
+estonia.rural.NO2 <- NO2.df.filter.fxn("estonia", "rural", as.Date("2019-12-19"), as.Date("2020-05-29"))
+#Scatter plot
+scatter_gplot(estonia.rural.NO2, 5E-5, 12, "Rural Estonia")
+#Tabulate pollution before and after lockdown
+summary(estonia.rural.NO2)
+summary(estonia.rural.NO2$NO2_Concentration[estonia.rural.NO2$covid_lockdown==0])
+summary(estonia.rural.NO2$NO2_Concentration[estonia.rural.NO2$covid_lockdown==1])
+#OLS regression
+period.model.estonia.rural <- lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020, data=estonia.rural.NO2) 
+summary(period.model.estonia.rural)
+#Plot
+period_scatter_plot(estonia.rural.NO2,ylim=5E-5, xlockdown=12,location="Rural Estonia",date.start="Dec 19th", date.end="May 29th",model=period.model.estonia.rural)
+```
+
+
+### Argentina
+#### ITS Analysis: Argentina urban and rural Dec-June
+```{r, eval = TRUE}
+#Urban
+argentina.urban.NO2 <- NO2.df.filter.fxn("argentina", "urban", as.Date("2019-12-26"), as.Date("2020-06-05"))
+#Scatter plot
+scatter_gplot(argentina.urban.NO2, 2.5E-5, 12, "Urban Argentina")
+#Tabulate pollution before and after lockdown
+summary(argentina.urban.NO2)
+summary(argentina.urban.NO2$NO2_Concentration[argentina.urban.NO2$covid_lockdown==0])
+summary(argentina.urban.NO2$NO2_Concentration[argentina.urban.NO2$covid_lockdown==1])
+#OLS regression
+period.model.argentina.urban <- lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020, data=argentina.urban.NO2) 
+summary(period.model.argentina.urban)
+#Plot
+period_scatter_plot(argentina.urban.NO2,ylim=2.5E-5, xlockdown=12,location="Urban Argentina",date.start="Dec 26th", date.end="June 5th",model=period.model.argentina.urban)
+
+#Rural
+argentina.rural.NO2 <- NO2.df.filter.fxn("argentina", "rural", as.Date("2019-12-26"), as.Date("2020-06-05"))
+#Scatter plot
+scatter_gplot(argentina.rural.NO2, 2.5E-5, 12, "Rural Argentina")
+#Tabulate pollution before and after lockdown
+summary(argentina.rural.NO2)
+summary(argentina.rural.NO2$NO2_Concentration[argentina.rural.NO2$covid_lockdown==0])
+summary(argentina.rural.NO2$NO2_Concentration[argentina.rural.NO2$covid_lockdown==1])
+#OLS regression
+period.model.argentina.rural <- lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020, data=argentina.rural.NO2) 
+summary(period.model.argentina.rural)
+#Plot
+period_scatter_plot(argentina.rural.NO2,ylim=2.5E-5, xlockdown=12,location="Rural Argentina",date.start="Dec 26th", date.end="June 5th",model=period.model.argentina.rural)
+```
+
+
+### Israel
+#### ITS Analysis: Israel urban and rural Dec-June
+```{r, eval = TRUE}
+#Urban
+israel.urban.NO2 <- NO2.df.filter.fxn("israel", "urban", as.Date("2019-12-25"), as.Date("2020-06-04"))
+#Scatter plot
+scatter_gplot(israel.urban.NO2, 5E-5, 12, "Urban Israel")
+#Tabulate pollution before and after lockdown
+summary(israel.urban.NO2)
+summary(israel.urban.NO2$NO2_Concentration[israel.urban.NO2$covid_lockdown==0])
+summary(israel.urban.NO2$NO2_Concentration[israel.urban.NO2$covid_lockdown==1])
+#OLS regression
+period.model.israel.urban <- lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020, data=israel.urban.NO2) 
+summary(period.model.israel.urban)
+#Plot
+period_scatter_plot(israel.urban.NO2,ylim=5E-5, xlockdown=12,location="Urban Israel",date.start="Dec 25th", date.end="June 4th",model=period.model.israel.urban)
+
+#Rural
+israel.rural.NO2 <- NO2.df.filter.fxn("israel", "rural", as.Date("2019-12-25"), as.Date("2020-06-04"))
+#Scatter plot
+scatter_gplot(israel.rural.NO2, 5E-5, 12, "Rural Israel")
+#Tabulate pollution before and after lockdown
+summary(israel.rural.NO2)
+summary(israel.rural.NO2$NO2_Concentration[israel.rural.NO2$covid_lockdown==0])
+summary(israel.rural.NO2$NO2_Concentration[israel.rural.NO2$covid_lockdown==1])
+#OLS regression
+period.model.israel.rural <- lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020, data=israel.rural.NO2) 
+summary(period.model.israel.rural)
+#Plot
+period_scatter_plot(israel.rural.NO2,ylim=5E-5, xlockdown=12,location="Rural Israel",date.start="Dec 25th", date.end="June 4th",model=period.model.israel.rural)
+```
+
+
+### China
+#### ITS Analysis: China urban and rural Oct-April
+```{r, eval = TRUE}
+#Urban
+china.urban.NO2 <- NO2.df.filter.fxn("china", "urban", as.Date("2019-10-31"), as.Date("2020-04-10"))
+#Scatter plot
+scatter_gplot(china.urban.NO2, 2.5E-4, 12, "Urban China")
+#Tabulate pollution before and after lockdown
+summary(china.urban.NO2)
+summary(china.urban.NO2$NO2_Concentration[china.urban.NO2$covid_lockdown==0])
+summary(china.urban.NO2$NO2_Concentration[china.urban.NO2$covid_lockdown==1])
+#OLS regression
+period.model.china.urban <- lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020, data=china.urban.NO2) 
+summary(period.model.china.urban)
+#Plot
+period_scatter_plot(china.urban.NO2,ylim=2.5E-4, xlockdown=12,location="Urban China",date.start="Oct 31st",date.end="April 10th",model=period.model.china.urban)
+
+#Rural
+china.rural.NO2 <- NO2.df.filter.fxn("china", "rural", as.Date("2019-10-31"), as.Date("2020-04-10"))
+#Scatter plot
+scatter_gplot(china.rural.NO2, 2.5E-4, 12, "Rural China")
+#Tabulate pollution before and after lockdown
+summary(china.rural.NO2)
+summary(china.rural.NO2$NO2_Concentration[china.rural.NO2$covid_lockdown==0])
+summary(china.rural.NO2$NO2_Concentration[china.rural.NO2$covid_lockdown==1])
+#OLS regression
+period.model.china.rural <- lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020, data=china.rural.NO2) 
+summary(period.model.china.rural)
+#Plot
+period_scatter_plot(china.rural.NO2,ylim=2.5E-4, xlockdown=12,location="Rural China",date.start="Oct 31st",date.end="April 10th",model=period.model.china.rural)
+```
+
+
+### Italy
+#### ITS Analysis: Italy urban and rural Dec-May
+```{r, eval = TRUE}
+#Urban
+italy.urban.NO2 <- NO2.df.filter.fxn("italy", "urban", as.Date("2019-12-15"), as.Date("2020-05-25"))
+#Scatter plot
+scatter_gplot(italy.urban.NO2, 1E-4, 12, "Urban Italy")
+#Tabulate pollution before and after lockdown
+summary(italy.urban.NO2)
+summary(italy.urban.NO2$NO2_Concentration[italy.urban.NO2$covid_lockdown==0])
+summary(italy.urban.NO2$NO2_Concentration[italy.urban.NO2$covid_lockdown==1])
+#OLS regression
+period.model.italy.urban <- lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020, data=italy.urban.NO2) 
+summary(period.model.italy.urban)
+#Plot
+period_scatter_plot(italy.urban.NO2,ylim=1E-4, xlockdown=12,location="Urban Italy",date.start="Dec 15th",date.end="May 25th",model=period.model.italy.urban)
+
+#Rural
+italy.rural.NO2 <- NO2.df.filter.fxn("italy", "rural", as.Date("2019-12-15"), as.Date("2020-05-25"))
+#Scatter plot
+scatter_gplot(italy.rural.NO2, 1E-4, 12, "Rural Italy")
+#Tabulate pollution before and after lockdown
+summary(italy.rural.NO2)
+summary(italy.rural.NO2$NO2_Concentration[italy.rural.NO2$covid_lockdown==0])
+summary(italy.rural.NO2$NO2_Concentration[italy.rural.NO2$covid_lockdown==1])
+#OLS regression
+period.model.italy.rural <- lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020, data=italy.rural.NO2) 
+summary(period.model.italy.rural)
+#Plot
+period_scatter_plot(italy.rural.NO2,ylim=1E-4, xlockdown=12,location="Rural Italy",date.start="Dec 15th",date.end="May 25th",model=period.model.italy.rural)
+```
+
+
+### Iraq
+#### ITS Analysis: Iraq urban and rural Jan-June
+```{r, eval = TRUE}
+#Urban
+iraq.urban.NO2 <- NO2.df.filter.fxn("iraq", "urban", as.Date("2020-01-10"), as.Date("2020-06-20"))
+#Scatter plot
+scatter_gplot(iraq.urban.NO2, 1E-4, 12, "Urban Iraq")
+#Tabulate pollution before and after lockdown
+summary(iraq.urban.NO2)
+summary(iraq.urban.NO2$NO2_Concentration[iraq.urban.NO2$covid_lockdown==0])
+summary(iraq.urban.NO2$NO2_Concentration[iraq.urban.NO2$covid_lockdown==1])
+#OLS regression
+period.model.iraq.urban <- lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020, data=iraq.urban.NO2) 
+summary(period.model.iraq.urban)
+#Plot
+period_scatter_plot(iraq.urban.NO2,ylim=1E-4, xlockdown=12,location="Urban Iraq",date.start="Jan 10th",date.end="June 20th",model=period.model.iraq.urban)
+
+#Rural
+iraq.rural.NO2 <- NO2.df.filter.fxn("iraq", "rural", as.Date("2020-01-10"), as.Date("2020-06-20"))
+#Scatter plot
+scatter_gplot(iraq.rural.NO2, 1E-4, 12, "Rural Iraq")
+#Tabulate pollution before and after lockdown
+summary(iraq.rural.NO2)
+summary(iraq.rural.NO2$NO2_Concentration[iraq.rural.NO2$covid_lockdown==0])
+summary(iraq.rural.NO2$NO2_Concentration[iraq.rural.NO2$covid_lockdown==1])
+#OLS regression
+period.model.iraq.rural <- lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020, data=iraq.rural.NO2) 
+summary(period.model.iraq.rural)
+#Plot
+period_scatter_plot(iraq.rural.NO2,ylim=1E-4, xlockdown=12,location="Rural Iraq",date.start="Jan 10th",date.end="June 20th",model=period.model.iraq.rural)
+```
+
+
+### India
+#### ITS Analysis: India urban and rural Dec-June
+```{r, eval = TRUE}
+#Urban
+india.urban.NO2 <- NO2.df.filter.fxn("india", "urban", as.Date("2019-12-30"), as.Date("2020-06-09"))
+#Scatter plot
+scatter_gplot(india.urban.NO2, 6E-5, 12, "Urban India")
+#Tabulate pollution before and after lockdown
+summary(india.urban.NO2)
+summary(india.urban.NO2$NO2_Concentration[india.urban.NO2$covid_lockdown==0])
+summary(india.urban.NO2$NO2_Concentration[india.urban.NO2$covid_lockdown==1])
+#OLS regression
+period.model.india.urban <- lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020, data=india.urban.NO2) 
+summary(period.model.india.urban)
+#Plot
+period_scatter_plot(india.urban.NO2,ylim=6E-5, xlockdown=12,location="Urban India",date.start="Dec 30th",date.end="June 9th",model=period.model.india.urban)
+
+#Rural
+india.rural.NO2 <- NO2.df.filter.fxn("india", "rural", as.Date("2019-12-30"), as.Date("2020-06-09"))
+#Scatter plot
+scatter_gplot(india.rural.NO2, 6E-5, 12, "Rural India")
+#Tabulate pollution before and after lockdown
+summary(india.rural.NO2)
+summary(india.rural.NO2$NO2_Concentration[india.rural.NO2$covid_lockdown==0])
+summary(india.rural.NO2$NO2_Concentration[india.rural.NO2$covid_lockdown==1])
+#OLS regression
+period.model.india.rural <- lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020, data=india.rural.NO2) 
+summary(period.model.india.rural)
+#Plot
+period_scatter_plot(india.rural.NO2,ylim=6E-5, xlockdown=12,location="Rural India",date.start="Dec 30th",date.end="June 9th",model=period.model.india.rural)
+```

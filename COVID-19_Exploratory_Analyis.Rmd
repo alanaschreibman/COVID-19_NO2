@@ -47,12 +47,16 @@ summary(owid)
 Data set, including possible confounders for use in later analysis, is cleaned and filtered below. 
 ```{r, eval = TRUE}
 owid.filtered <- owid %>%
-                  rename(iso.code = iso_code, totcases = total_cases, newcases = new_cases, totdeaths = total_deaths, newdeaths = new_deaths, totcases.mil = total_cases_per_million, totdeaths.mil = total_deaths_per_million, pop.density = population_density, med.age = median_age, older70 = aged_70_older, gdp.cap = gdp_per_capita, card.death = cardiovasc_death_rate, diab.prev = diabetes_prevalence, fem.smokers = female_smokers, male.smokers = male_smokers) %>%
+                  rename(iso.code = iso_code, totcases = total_cases, newcases = new_cases, totdeaths = total_deaths, newdeaths = new_deaths, totcases.mil = total_cases_per_million, totdeaths.mil = total_deaths_per_million, tottests.thousand = total_tests_per_thousand, pop.density = population_density, med.age = median_age, older70 = aged_70_older, gdp.cap = gdp_per_capita, card.death = cardiovasc_death_rate, diab.prev = diabetes_prevalence, fem.smokers = female_smokers, male.smokers = male_smokers) %>%
                   select(c(iso.code:newcases, totdeaths, newdeaths, totcases.mil, totdeaths.mil, population, pop.density, med.age, older70, gdp.cap, card.death, diab.prev, fem.smokers, male.smokers)) %>% #Renamed variables and filtered to keep only those of interest. 
-                  filter(date == "2021-06-28") #Filtered out all but most recent date (most recent date is a running sum of total cases).
+                  filter(date == "2021-07-16") #Filtered out all but most recent date (most recent date is a running sum of total cases).
 table(owid.filtered$continent, useNA = "ifany") #Data includes both continent and country-specific outcomes. Continent outcomes can be distinguished by "NA" in the continent column; the continent name is in the location column. 
 cfr.df <- data.frame("case.fatality.rate"= owid.filtered$totdeaths / owid.filtered$totcases, "location" = owid.filtered$location) 
+owid.tottests <- read.csv(url("https://raw.githubusercontent.com/owid/covid-19-data/master/public/data/latest/owid-covid-latest.csv"), na.strings = c("", "NA"), header = TRUE)
+owid.tottests <- owid.tottests %>% select(location, tottests.thousand = total_tests_per_thousand)
 owid.filtered <- merge(owid.filtered, cfr.df, by = "location")
+  rm(cfr.df)
+owid.filtered <- left_join(owid.filtered, owid.tottests, by = "location")
 ```
 
 More exploratory analysis of data frames:
@@ -264,6 +268,69 @@ owid %>%
     scale_x_date(date_breaks = "1 month") +
     scale_fill_gradient(low = "#ffeda0", high = "#f03b20", limits = c(0, 20000)) +
     ggsave(file = "test.image2.pdf", width = 20, height = 25) #New cases per million over time by country as heatmap. Difficult to scale because range is so large.  
+```
+
+## COVID testing and COVID-19 Outcomes
+### COVID testing and COVID-19 Cases per Million
+First, a linear regression is performed on world COVID-19 cases and testing Then, scatter plots with a smooth line showing the relationship between total tests per thousand and COVID-19 cases per million people are the outputs of the function below: 
+```{r, eval = TRUE}
+ggplot(data = owid.countries, aes(x = tottests.thousand, y = totcases.mil)) +
+  geom_point(color = "#333aff") +
+  geom_smooth(color = "red") +
+  geom_smooth(method = "lm", color = "purple") +
+  theme_bw() +
+  labs(x = "Total Tests per Thousand", y = "Total COVID-19 Cases per Million People") +
+  labs(title = paste0("World COVID-19 Cases per Million People in vs. Total COVID Tests per Thousand")) #COVID-19 cases and total tests per thousand on world scale. Red line is smooth fit; purple line is linear fit. 
+cor(owid.countries$totcases.mil, owid.countries$tottests.thousand, use = "complete.obs") 
+testing.lm.cases <- lm(totcases.mil ~ tottests.thousand, data = owid.countries)
+testing.lm.cases
+summary.lm(testing.lm.cases) #Summary statistics for linear fit. 
+
+cases.testing <- function(x) { 
+                    owid.countries %>% 
+                    filter(continent == x) %>%
+                    ggplot(aes(x = tottests.thousand, y = totcases.mil)) +
+                        geom_point(color = "#333aff") +
+                        geom_smooth(color = "red") +
+                        geom_smooth(method = "lm", color = "purple") +
+                        theme_bw() +
+                        labs(x = "Total Tests per Thousand", y = "Total COVID-19 Cases per Million People") +
+                        labs(title = paste0("COVID-19 Cases per Million People in ", (continent = x), " vs. Total Tests per Thousand"))
+} 
+for (i in c("North America", "Europe", "Asia", "Africa", "Oceania", "South America")) {
+  print(cases.testing(i))
+} #Loops function for continents of interest. 
+```
+
+### COVID testing and COVID-19 Deaths per Million
+First, a linear regression is performed on world COVID-19 deaths and testing Then, scatter plots with a smooth line showing the relationship between total tests per thousand and COVID-19 deaths per million people are the outputs of the function below: 
+```{r, eval = TRUE}
+ggplot(data = owid.countries, aes(x = tottests.thousand, y = totdeaths.mil)) +
+  geom_point(color = "#333aff") +
+  geom_smooth(color = "red") +
+  geom_smooth(method = "lm", color = "purple") +
+  theme_bw() +
+  labs(x = "Total Tests per Thousand", y = "Total COVID-19 Deaths per Million People") +
+  labs(title = paste0("World COVID-19 Deaths per Million People in vs. Total Tests per Thousand")) #COVID-19 deaths and Total Tests per Thousand on world scale. Red line is smooth fit; purple line is linear fit. 
+cor(owid.countries$totdeaths.mil, owid.countries$tottests.thousand, use = "complete.obs") 
+testing.lm.deaths <- lm(totdeaths.mil ~ tottests.thousand, data = owid.countries)
+testing.lm.deaths
+summary.lm(testing.lm.deaths) #Summary statistics for linear fit. 
+
+deaths.testing <- function(x) { 
+                    owid.countries %>% 
+                    filter(continent == x) %>%
+                    ggplot(aes(x = tottests.thousand, y = totdeaths.mil)) +
+                        geom_point(color = "#333aff") +
+                        geom_smooth(color = "red") +
+                        geom_smooth(method = "lm", color = "purple") +
+                        theme_bw() +
+                        labs(x = "Total Tests per Thousand", y = "Total COVID-19 Deaths per Million People") +
+                        labs(title = paste0("COVID-19 Deaths per Million People in ", (continent = x), " vs. Total Tests per Thousand"))
+} 
+for (i in c("North America", "Europe", "Asia", "Africa", "Oceania", "South America")) {
+  print(deaths.testing(i))
+} #Loops function for continents of interest. 
 ```
 
 ## Population Size and COVID-19 Outcomes
