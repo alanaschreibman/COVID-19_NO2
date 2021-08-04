@@ -691,7 +691,7 @@ results.df.fxn <- function(model.list, index.titles, location) {
   # set the list names at the beginning of each column
   sep.df <- purrr::imap(sep.df, ~purrr::set_names(.x, paste(.y, names(.x), sep = "_")))
   # rename each term column as "term"
-  sep.df <- purrr::map(sep.df, ~rename_with(.x, str_replace, pattern = ".*Predictors", replacement = "Predictors"))
+  sep.df <- purrr::map(sep.df, ~rename_with(.x, stringr::str_replace, pattern = ".*Predictors", replacement = "Predictors"))
   # join them all together
   joined.results <- purrr::reduce(sep.df, full_join, by = "Predictors")
   Location <- location
@@ -2214,13 +2214,13 @@ rural.results.df <- gtools::smartbind(poland.rural.results, slovakia.rural.resul
 rural.results.df <- rename(rural.results.df, `School Closures` = `school closures_p`, `Workplace Closures` = `workplace closures_p`, `Cancelled Public Events` = `cancelled public events_p`, `Restrictions on Gatherings` = `restrictions on gatherings_p`, `Public Transport Closures` = `public transport closures_p`, `Stay at Home Orders` = `stay at home orders_p`, `Internal Travel Restrictions` = `restrictions on internal travel_p`, `International Travel Restrictions` = `restrictions on international travel_p`, `Overall Lockdown Stringency Index` = `overall lockdown stringency index_p`)
 rural.results.df[, 3:11] <- round(rural.results.df[, 3:11], digits = 3)
 
-table.fxn <- function(data) {
+table.fxn <- function(data, type, location) {
 gt_tbl <- data %>% gt(rowname_col = "Location") 
 
 gt_tbl.mod <- 
   gt_tbl %>%
   tab_header(
-    title = md("**Urban Nitrogen Dioxide Concentrations During Lockdown**"),
+    title = md(paste0("**", location, " Nitrogen Dioxide Concentrations During Lockdown**")),
     subtitle = "Significance of Varying Lockdown Measures on Ambient NO2") %>% 
   tab_row_group(
     label = md("**Sub-Saharan Africa**"), 
@@ -2298,11 +2298,11 @@ gt_tbl.mod <-
       columns = `Overall Lockdown Stringency Index`,
       rows = `Overall Lockdown Stringency Index` <= 0.05)) %>%
   tab_source_note(
-    source_note = md("**Bolded** *p* values signify *p*<.05")
-  )
+    source_note = md("**Bolded** *p* values signify *p*<.05"))%>%
+  gtsave(filename= paste0(as.character(type), ".html"))
 }
-table.fxn(urban.results.df)
-table.fxn(rural.results.df)
+table.fxn(urban.results.df, "urban.results", "Urban")
+table.fxn(rural.results.df, "rural.results", "Rural")
 ```
 
 
