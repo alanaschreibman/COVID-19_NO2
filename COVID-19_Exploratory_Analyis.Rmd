@@ -57,6 +57,7 @@ owid.tottests <- owid.tottests %>% select(location, tottests.thousand = total_te
 owid.filtered <- merge(owid.filtered, cfr.df, by = "location")
   rm(cfr.df)
 owid.filtered <- left_join(owid.filtered, owid.tottests, by = "location")
+owid.countries %>% arrange(desc(pop.density))
 ```
 
 More exploratory analysis of data frames:
@@ -85,7 +86,6 @@ covid.mean.fxn <- function(x, column, lab) {
   mean <- mean(df[[column]], na.rm = T)
   Date <- as.Date(dates.covid.weekly[[x]])
   Week <- paste0(as.character(as.Date(dates.covid.weekly[[x]])), " to ", as.character(as.Date(dates.covid.weekly[[x]]) + 6)) 
-  col.lab <- as.character(paste0("Mean_Weekly_", lab))
   df <- data.frame(Date, Week, mean) 
   names(df)[3] <- as.character(paste0("Mean_Weekly_", lab))
   df

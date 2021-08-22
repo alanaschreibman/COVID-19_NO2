@@ -123,12 +123,37 @@ right.c[right.c < -0.001] <- NA
 world.NO2.r <- raster::mosaic(left.c, right.c, fun=mean)
 rm(left, left.c, right, right.c)
 
+#Creating averages of raster stacks from before lockdown and after lockdown. 
+d1 <- seq(as.Date("2019-10-13"), as.Date("2020-02-28"), by=1) 
+d2 <-  seq(as.Date("2020-03-01"), as.Date("2020-12-31"), by=1)
+dates.2020 <- c(d1, d2)
+lockdown <- as.Date("2020-01-30")
+index <- which(dates.2020 %in% lockdown)
+pre <- rev(seq(index - 7, 68, by = -7))
+post <- seq(index, 145, by = 7)
+pre.stack <- stack(weekly.list.2020[pre])
+post.stack <- stack(weekly.list.2020[post])
+pre.2019.stack <- stack(weekly.list.2019[pre])
+post.2019.stack <- stack(weekly.list.2019[post])
+pre.mean <- calc(pre.stack, fun = mean, na.rm = T)
+post.mean <- calc(post.stack, fun = mean, na.rm = T)
+pre.2019.mean <- calc(pre.2019.stack, fun = mean, na.rm = T)
+post.2019.mean <- calc(post.2019.stack, fun = mean, na.rm = T)
+plot(pre.mean)
+plot(post.mean)
 #Converting to data frame for plotting. 
-r.crop <- crop(world.NO2.r, extent(wrld_simpl))
-r.crop <- mask(r.crop, wrld_simpl)
-r.pts <- rasterToPoints(r.crop, spatial = TRUE)
-world.NO2.df <- data.frame(r.pts)
-rm(r.pts, r.crop)
+raster.to.points.fxn <- function(raster) {
+  r.crop <- crop(raster, extent(wrld_simpl))
+  r.crop <- mask(r.crop, wrld_simpl)
+  r.pts <- rasterToPoints(r.crop, spatial = TRUE)
+  data.frame(r.pts)
+}
+
+world.NO2.df <- raster.to.points.fxn(world.NO2.r)
+pre.NO2.df <- raster.to.points.fxn(pre.mean)
+post.NO2.df <- raster.to.points.fxn(post.mean)
+pre.2019.df <- raster.to.points.fxn(pre.2019.mean)
+post.2019.df <- raster.to.points.fxn(post.2019.mean)
 
 myPalette <- colorRampPalette(brewer.pal(9, "YlOrRd")) 
 
@@ -139,23 +164,45 @@ my_theme <- function() {
         axis.title = element_blank(),
         panel.grid = element_line(color = "white"),  # make grid lines invisible
         legend.key.size = unit(0.5, "cm"),           # increase size of legend
-        legend.text = element_text(size = 7),       # increase legend text size
+        legend.text = element_text(size = 4),       # increase legend text size
         legend.title = element_text(size = 7))      # increase legend title size
 }
 
-ggplot() +
- geom_raster(data = world.NO2.df, aes(x = x, y = y, fill = layer)) + 
- geom_polygon(data = wrld_simpl, aes(x = long, y = lat, group = group), colour = "black", size = 0.2, fill = NA) +
-  my_theme() + 
-  ggtitle("World NO2 Concentrations 01-01-2019 to 01-01-2020") +
-  #scale_fill_manual(breaks = c(0, 0.0000025, 0.000005, 0.0000075, 0.00001, 0.00002)) +
-  scale_fill_gradientn(name = "NO2 Concentration \n(mol/m^2)", colours = myPalette(100))  +
+world.raster.plot.fxn <- function(df, date) {
+  ggplot() +
+    geom_raster(data = df, aes(x = x, y = y, fill = layer)) + 
+    geom_polygon(data = wrld_simpl, aes(x = long, y = lat, group = group), colour = "black", size = 0.2, fill = NA) +
+    my_theme() + 
+      ggtitle(bquote("World"~NO[2]~" Concentrations,"~.(date))) +
+      #scale_fill_manual(breaks = c(-3.1E-5,7.5E-6,1.5E-5,3E-5,6E-5,1.2E-4,6E-4)) +
+      #scale_fill_gradientn(name = expression(paste(NO[2], " Concentration (mol/", m^2, ")")), colours = myPalette(100), limits = c(-3.1E-5, 6E-4)) +
+    scale_fill_distiller(palette = "YlOrRd", direction = 1, breaks = c(-3.1E-5,0,1E-4,2E-4,3E-4,4E-4,5E-4,6E-4), limits = c(-3.1E-5, 6E-4), values = c(0, 0.1, 0.2, 0.4, 0.8, 0.9, 1)) + 
+    guides(fill = guide_colorbar(
+      ticks = TRUE, 
+      even.steps = FALSE,
+      frame.linewidth = 0.55, 
+      frame.colour = "black", 
+      ticks.colour = "black",
+      ticks.linewidth = 0.3,
+      title = expression(paste(NO[2], " Concentration (mol/", m^2, ")")),
+      barheight = 10)) +
     north(x.min = -180, y.min = -90, x.max = 180, y.max = 90, anchor = c(x=-140, y=-35), symbol=12) +
     scalebar(x.min = -180, y.min = -90, x.max = 180, y.max = 90, dist = 1000, dist_unit = 'km', transform = TRUE, anchor = c(x=-140, y=-60), st.size = 2, model = 'WGS84') +
-  coord_equal()
+    coord_equal()
+}
 
+
+world.raster.plot.fxn(world.NO2.df, "2019 Average")
+world.raster.plot.fxn(pre.NO2.df, "2020 Pre-Lockdown")
+world.raster.plot.fxn(post.NO2.df, "2020 Post-Lockdown")
+world.raster.plot.fxn(pre.2019.df, "2019 Pre-Lockdown")
+world.raster.plot.fxn(post.2019.df, "2019 Post-Lockdown")
+max(pre.NO2.df$layer)
 #R base plots.
-plot(world.NO2.r)
+
+plot(wrld_simpl[wrld_simpl$NAME == "Israel", ])
+plot(world.NO2.r, add = T)
+
 plot(wrld_simpl, add = TRUE)
 ```
 
@@ -1445,6 +1492,11 @@ seattle.ground.fxn <- function(x) {
 }
 x <- seq_along(dates.2020.Q1)
 seattle.ground.weekly.df <- purrr::map_dfr(x, seattle.ground.fxn) 
+wrld_simpl[wrld_simpl$NAME == "United States", ]
+wrld_simpl[wrld_simpl$NAME == "Zimbabwe", ]
+wrld_simpl[wrld_simpl$NAME == "China", ]
+wrld_simpl[wrld_simpl$NAME == "Germany", ]
+
 
 #Wuhan
 wuhan.ground.NO2.fxn <- function(x) {
@@ -1574,7 +1626,7 @@ london.sat.weekly <- purrr::map2_dfr(x, y, london.sat.fxn)
 london.weekly.df <- rbind(london.sat.weekly,london.ground.weekly.df) 
 ```
 
-#### US monitor correlation tests.
+#### US monitor correlation tests: annual 2019. 
 ```{r, eval = TRUE}
 us.2019.ground <- read.csv(file = 'US_ground_NO2/annual_conc_by_monitor_2019.csv') 
 us.2019.ground.filtered <- us.2019.ground %>% filter(Parameter.Name == "Nitrogen dioxide (NO2)", Metric.Used == "Observed values") %>% select(Longitude, Latitude, Ground.Mean = 28, Datum, Site.Num)
@@ -1595,6 +1647,181 @@ ggplot(us.2019.compare.df, aes(x = Ground.Mean, y = Sat.Mean)) +
 cor(us.2019.compare.df$Sat.Mean, us.2019.compare.df$Ground.Mean, use = "complete.obs") 
 NO2.lm.compare <- lm(Sat.Mean ~ Ground.Mean, data = us.2019.compare.df)
 summary.lm(NO2.lm.compare)
+```
+
+#### US monitor correlation tests: daily 2020 Camden station. 
+```{r, eval = TRUE}
+dates.2020.weekly <- seq(as.Date("2020-01-01"), as.Date("2020-12-31"), by=7)  
+
+ground.df.filter.fxn <- function(file) {
+  daily.df <- read.csv(file = paste0("US_ground_NO2/", file))
+  daily.df.filtered <- daily.df %>% filter(Parameter.Name == "Nitrogen dioxide (NO2)", Pollutant.Standard == "NO2 1-hour") %>% select(Parameter.Name, Date = 12, Ground.Mean = 21, Datum)
+  daily.df.filtered$Date <- as.Date(daily.df.filtered$Date)
+  daily.df.filtered
+}
+camden.daily.filtered <- ground.df.filter.fxn("daily_camden_2020.csv")
+car.barn.montgomery.filtered <- ground.df.filter.fxn("daily_car-barn_montgomery_2020.csv")
+north.east.waste.filtered <- ground.df.filter.fxn("daily_north_east_waste_2020.csv")
+torresdale.filtered <- ground.df.filter.fxn("daily_torresdale_2020.csv")
+
+#Makes data frame of monitor NO2 weekly average over 2020. 
+ground.NO2.mean.fxn <- function(df, t, monitor) {
+  time.series.list <- df %>% filter(df$Date %in% (as.Date(t):(as.Date(t) + 6)))
+  df <- data.frame(time.series.list)
+  mean <- mean(df[["Ground.Mean"]], na.rm = T)
+  Date <- as.Date(t)
+  Week <- paste0(as.character(as.Date(t)), " to ", as.character(as.Date(t + 6)))
+  Location <- as.character(monitor)
+  df <- data.frame(Date, Week, Location, mean) 
+  names(df)[4] <- as.character(paste0("Ground_Mean_Weekly_NO2"))
+  df
+}
+camden.ground.df <- purrr::map_dfr(.x = dates.2020.weekly, .f = ground.NO2.mean.fxn, df = camden.daily.filtered, monitor = "Camden Spruce Street")
+car.barn.ground.df <- purrr::map_dfr(.x = dates.2020.weekly, .f = ground.NO2.mean.fxn, df = car.barn.montgomery.filtered, monitor = "Car-Barn Montgomery I-76")
+north.east.waste.ground.df <- purrr::map_dfr(.x = dates.2020.weekly, .f = ground.NO2.mean.fxn, df = north.east.waste.filtered, monitor = "North East Waste")
+torresdale.ground.df <- purrr::map_dfr(.x = dates.2020.weekly, .f = ground.NO2.mean.fxn, df = torresdale.filtered, monitor = "Torresdale")
+is.na(north.east.waste.ground.df)
+#Function for averaging ground data over philly
+l1 <- camden.ground.df$Ground_Mean_Weekly_NO2
+l2 <- car.barn.ground.df$Ground_Mean_Weekly_NO2
+l3 <- north.east.waste.ground.df$Ground_Mean_Weekly_NO2
+l4 <- torresdale.ground.df$Ground_Mean_Weekly_NO2
+
+philly.ground.df <- data.frame(Ground_Mean_Weekly_NO2 = purrr::pmap_dbl(list(l1, l2, l3, l4), mean, na.rm = T), Location = "Philadelphia", Date = dates.2020.weekly)
+
+#Function for extracting satellite data by point over 2020. 
+sat.comp.extract.fxn <- function(lon, lat, df, location) {
+  d1 <- seq(as.Date("2019-10-13"), as.Date("2020-02-28"), by=1)  
+  d2 <-  seq(as.Date("2020-03-01"), as.Date("2020-12-31"), by=1)
+  dates.2020 <- c(d1, d2)
+  date.indexes <- which(dates.2020 %in% dates.2020.weekly)
+  
+  lat.lon <- data.frame(Longitude = lon, Latitude = lat)
+  datum = df$Datum[[1]]
+  if (datum == "WGS84") {
+      sp <- SpatialPoints(lat.lon, proj4string = CRS("+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs")) 
+      sf.point <- st_as_sf(sp) #Makes sf point with latitude and longitude of station. 
+    } else {
+      sp <- SpatialPoints(lat.lon, proj4string = CRS("+proj=longlat +ellps=GRS80 +datum=NAD83 +no_defs")) 
+      sp.transformed <- spTransform(sp, "+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs")
+     sf.point <- st_as_sf(sp.transformed) #Makes sf point with latitude and longitude of station. 
+    }
+  world.extract.2020.fxn <- function(r, monitor, date) {
+    r.mean <- raster::extract(r, sf.point, method = 'simple') 
+    final.df <- data.frame("Sat_Mean_Weekly_NO2" = r.mean)   
+    Date <- as.Date(date)
+    Location <- rep(as.character(monitor), length.out = nrow(final.df))
+    Week <- paste0(as.character(date), " to ", as.character((date) + 6))
+    weekly.2020 <- cbind(final.df, Location, Date, Week) 
+    weekly.2020 <- weekly.2020 %>% select(Location, Date, Week, Sat_Mean_Weekly_NO2)
+  }
+
+  r.2020 <- weekly.list.2020[date.indexes]
+  date.2020 <- dates.2020[date.indexes]
+  ground.comp.2020.weekly.df <- purrr::map2_dfr(.x = r.2020, .y = date.2020, .f = world.extract.2020.fxn, monitor = location)
+  ground.comp.2020.weekly.df
+}
+camden.sat.df <- sat.comp.extract.fxn(-75.12522, 39.93456, camden.daily.filtered, "Camden Spruce Street")
+camden.ground.vs.sat <- merge(camden.ground.df, camden.sat.df, by = "Date")
+
+car.barn.sat.df <- sat.comp.extract.fxn(-75.207205, 39.988842, car.barn.montgomery.filtered, "Car-Barn Montgomery I-76")
+car.barn.ground.vs.sat <- merge(car.barn.ground.df, car.barn.sat.df, by = "Date")
+
+north.east.waste.sat.df <- sat.comp.extract.fxn(-75.080833, 39.991389, north.east.waste.filtered, "North East Waste")
+n.e.waste.ground.vs.sat <- merge(north.east.waste.ground.df, north.east.waste.sat.df, by = "Date")
+
+torresdale.sat.df <- sat.comp.extract.fxn(-74.985166, 40.054171, torresdale.filtered, "Torresdale")
+torresdale.ground.vs.sat <- merge(torresdale.ground.df, north.east.waste.sat.df, by = "Date")
+
+#Function for extracting satellite data by polygon over 2020. 
+sat.comp.extract.fxn  <- function(location) {
+  #Making Philly polygon based on monitor locations. 
+  philly.poly <- rbind(c(-75.12522, 39.93456), c(-75.207205, 39.988842), c( -75.080833, 39.991389), c(-74.985166, 40.054171))
+  philly.poly <- Polygon(philly.poly)
+  philly.poly <- Polygons(list(philly.poly),1)
+  philly.poly <- SpatialPolygons(list(philly.poly))
+  proj4string(philly.poly) <- CRS("+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs")
+  philly.poly.sf <- st_as_sf(philly.poly)
+  
+  d1 <- seq(as.Date("2019-10-13"), as.Date("2020-02-28"), by=1)  
+  d2 <-  seq(as.Date("2020-03-01"), as.Date("2020-12-31"), by=1)
+  dates.2020 <- c(d1, d2)
+  date.indexes <- which(dates.2020 %in% dates.2020.weekly)
+  
+  ground.sat.extract.2020.fxn <- function(r, monitor, date) {
+    r.mean <- exactextractr::exact_extract(r, philly.poly.sf, weights = 'area', 'mean') 
+    final.df <- data.frame("Sat_Mean_Weekly_NO2" = r.mean)   
+    Date <- as.Date(date)
+    Location <- rep(as.character(monitor), length.out = nrow(final.df))
+    Week <- paste0(as.character(date), " to ", as.character((date) + 6))
+    weekly.2020 <- cbind(final.df, Location, Date, Week) 
+    weekly.2020 %>% select(Location, Date, Week, Sat_Mean_Weekly_NO2)
+    }
+  r.2020 <- weekly.list.2020[date.indexes]
+  date.2020 <- dates.2020[date.indexes]
+  purrr::map2_dfr(.x = r.2020, .y = date.2020, .f = ground.sat.extract.2020.fxn, monitor = location)
+  }
+philly.sat.df <- sat.comp.extract.fxn("Philadelphia")
+philly.ground.vs.sat <- merge(philly.ground.df, philly.sat.df, by = "Date")
+
+#Function to return summary statistics for linear model. 
+ground.sat.summary.fxn <- function(df) {
+  cor <- cor(df$Sat_Mean_Weekly_NO2, df$Ground_Mean_Weekly_NO2, use = "complete.obs") 
+  lm.compare <- lm(Sat_Mean_Weekly_NO2 ~ Ground_Mean_Weekly_NO2, data = df)
+  model.summary <- summary.lm(lm.compare)
+  return(list(cor, model.summary))
+}
+ground.sat.summary.fxn(camden.ground.vs.sat)
+ground.sat.summary.fxn(car.barn.ground.vs.sat)
+ground.sat.summary.fxn(n.e.waste.ground.vs.sat)
+ground.sat.summary.fxn(torresdale.ground.vs.sat)
+ground.sat.summary.fxn(philly.ground.vs.sat)
+
+#Linear model plot.
+ggplot(data = philly.ground.vs.sat, aes(x = Ground_Mean_Weekly_NO2, y = Sat_Mean_Weekly_NO2)) + 
+  geom_point() +
+  geom_smooth(method = 'lm') + 
+  theme_bw() +
+  ggtitle(expression("Philadelphia 2020 Weekly Sentinel Satellite"~NO[2]~"vs. EPA Ground Monitor"~NO[2])) +
+    ylab(expression("Satellite"~NO[2]~"(mol/m^2)")) +
+    xlab(expression("Ground"~NO[2]~"(ppb)"))
+  
+#Function to plot ground vs satellite function. 
+plot.comp.fxn <- function(df, monitor) {
+  # add extra space to right margin of plot within frame
+  par(mar=c(5, 4, 4, 6) + 0.1)
+  # plot first set of data and draw its axis
+  lo1 <- loess(Ground_Mean_Weekly_NO2~as.numeric(Date), data = df)
+  mod.df <- na.omit(subset(df))
+  plot(Ground_Mean_Weekly_NO2 ~ Date, data = mod.df, pch=16, cex = 0.5, axes=FALSE, ylim=c(0,30), xlab="", ylab="", 
+    type="p",col="black", main=bquote(.(monitor)~"EPA Monitor vs Sentinel Satellite"~NO[2]~", 2020"),  font.main = 2, cex.main=0.8)
+  lines(df$Date, predict(lo1), col='black', lwd=2, lty=2, ylim=c(0,30))
+  axis(2, ylim=c(0,30),col="black",las=1)  ## las=1 makes horizontal labels
+  mtext(expression(paste("Ground ", NO[2], " (ppb)")),side=2,line=2.5)
+  box()
+  # allow a second plot on the same graph
+  par(new=TRUE)
+  # plot the second plot and put axis scale on right
+  plot(Sat_Mean_Weekly_NO2 ~ Date, data = df, pch=15, cex = 0.5, xlab="", ylab="", ylim=c(0,7E-5),axes=FALSE, type="p", col="red")
+  # a little farther out (line=4) to make room for labels
+  mtext(expression(paste("Satellite ", NO[2], " (mol/", m^2, ")")),side=4,col="red",line=4) 
+  axis(4, ylim=c(0,7E-5), col="red",col.axis="red",las=1)
+  # Draw the time axis
+  axis(1, df$Date, format(df$Date, "%b %d"), cex.axis = .7)
+  mtext("Date",side=1,col="black",line=2.5)  
+  lo2 <- loess(Sat_Mean_Weekly_NO2~as.numeric(Date), data = df)
+  lines(df$Date, predict(lo2), col='red', lwd=2, lty=2, ylim=c(0,30))
+  # add Legend
+  legend("topleft",legend=c(expression(paste("Ground ", NO[2])), expression(paste("Satellite ", NO[2]))),
+    text.col=c("black","red"),pch=c(16,15),col=c("black","red"), cex = 0.6)
+}
+
+#Time series plots
+plot.comp.fxn(camden.ground.vs.sat, "Camden Spruce Street")
+plot.comp.fxn(car.barn.ground.vs.sat,  "Car-Barn Montgomery I-76")
+plot.comp.fxn(n.e.waste.ground.vs.sat,  "North East Waste")
+plot.comp.fxn(torresdale.ground.vs.sat,  "Torresdale")
+plot.comp.fxn(philly.ground.vs.sat,  "Philadelphia")
 ```
 
 
@@ -2108,7 +2335,7 @@ wrld_simpl.sf <- st_as_sf(wrld_simpl.sp)
 #Urban shapefiles.
 urban.shp.fxn <- function(location) {
   country.shp <- wrld_simpl.sf[wrld_simpl.sf$NAME == as.character(location), ]
-  country.shp <- gSimplify(as(country.shp, 'Spatial'), tol = 0.00001, topologyPreserve=TRUE) %>% st_as_sf()  
+  #country.shp <- rgeos::gSimplify(as(country.shp, 'Spatial'), tol = 0.00001, topologyPreserve=TRUE) %>% st_as_sf()  
   urban.country.poly <- st_intersection(st_make_valid(st_geometry(country.shp)), st_geometry(world.urban.sf))
   urban.country.single <- st_combine(urban.country.poly)
   urban.country.sf <- st_as_sf(urban.country.single)
@@ -2121,7 +2348,7 @@ total.urban.shp.list <- purrr::map(large.area.names, urban.shp.fxn) #Makes list 
 #Rural shapefiles.
 rural.shp.fxn <- function(location, n) {
   country.shp <- wrld_simpl.sf[wrld_simpl.sf$NAME == location, ]
-  country.shp <- gSimplify(as(country.shp, 'Spatial'), tol = 0.00001, topologyPreserve=TRUE) %>% st_as_sf()  
+  #country.shp <- gSimplify(as(country.shp, 'Spatial'), tol = 0.00001, topologyPreserve=TRUE) %>% st_as_sf()  
   country.urban.sf <- top3.urban.shp.list[[n]]
   country.urban.sf <- st_transform(country.urban.sf,"+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
   #country.rural.poly <- st_difference(st_make_valid(st_geometry(country.shp)), st_make_valid(st_geometry(country.urban.sf)))
@@ -2137,7 +2364,7 @@ wrld_simpl.simp.sf <- gSimplify(wrld_simpl.sp, tol = 0.00001, topologyPreserve=T
 world.urban.intersection.sf <- st_intersection(st_make_valid(st_geometry(wrld_simpl.simp.sf)), st_geometry(world.urban.sf))
 world.urban.intersection.single <- st_combine(world.urban.intersection.sf)
 world.urban.intersection.rob.sf <- st_as_sf(world.urban.intersection.single)
-world.urban.intersection.sf <- st_transform(world.urban.intersection.rob.sf, "+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs")  
+world.urban.intersection.sf <- st_transform(world.urban.intersection.rob.sf, "+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs")
 
 #Rural world shapefile.
 wrld_simpl.sp <- spTransform(wrld_simpl,"+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
@@ -2146,8 +2373,10 @@ wrld_simpl.sp <- gBuffer(wrld_simpl.sp, byid=TRUE, width=0)
 wrld_simpl.sf <- st_as_sf(wrld_simpl.sp)
 
 world.rural.sp <- gDifference(wrld_simpl.sp, world.urban.sp)
-world.rural.sf <- st_as_sf(world.rural.sp)
-world.rural.sf <- st_transform(world.rural.sf, "+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs")  
+world.rural.sp.valid <- gMakeValid(world.rural.sp)
+world.rural.sp.poly <- world.rural.sp.valid@polyobj
+world.rural.sf.valid <- st_as_sf(world.rural.sp.poly)
+world.rural.sf <- st_transform(world.rural.sf.valid, "+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs")  
 ```
 
 
@@ -2209,6 +2438,19 @@ lockdown.date.fxn <- function(country, column, n) {
   cbind(Country, Index.type, dates.df)
 }  
 
+#Uses stringency index 50 as cutoff. 
+lockdown.date.fxn <- function(country, column) {
+  if (column == "StringencyIndex") {
+     lockdown.date <- stringency.df.mod %>% filter(location == country, is.na(RegionName)) %>% subset(.[, column] >= 50) %>% .[1, 3] 
+  } else {
+    lockdown.date <- stringency.df.mod %>% filter(location == country, is.na(RegionName)) %>% subset(.[, column] != 0) %>% .[1, 3] 
+  }
+  dates.df <- data.frame(lockdown.date)
+  Index.type <- column
+  Country <- country
+  cbind(Country, Index.type, dates.df)
+}  
+
 countries <- rep(top3.list, each = 9)
 indexnames <- colnames(stringency.df.mod) 
 indexnames <- indexnames[4:12]
@@ -2220,6 +2462,7 @@ stringencyindex.df[[152, 3]] <- as.Date("2020-01-23") #No Oxford index data on N
 stringencyindex.df[[39, 3]] <- as.Date("2020-02-28") #Changed 02-29 date to 02-28 to avoid leap year problems. 
 stringencyindex.df[[49, 3]] <- NA #Removed value for Japan restrictions on gatherings because date was in 2021 (outside of study period).
 stringencyindex.df[[50, 3]] <- NA #Removed value for Japan closing public transport because date was in late 2020 (outside of study period).
+stringencyindex.df[[54, 3]] <- NA #Removed value for Japan stringency index because date was in 2021 (outside of study period).
 stringencyindex.df[[41, 3]] <- NA #Removed value for Germany closing public transport because date was late 2020 (outside of study period).
 stringencyindex.df[[158, 3]] <- NA #Removed value for Malaysia closing public transport because date was late 2020 (outside of study period).
 stringencyindex.df.complete <- na.omit(stringencyindex.df) #Omits North Korea missing values, as well as South Korea, Japan, and Germany missing values. 
@@ -2306,34 +2549,7 @@ purrr::pmap(list(stringencyindex.split.df[[5]]$lockdown.date, top3.urban.shp.lis
 purrr::pmap(list(stringencyindex.split.df[[6]]$lockdown.date, top3.urban.shp.list[rm.nkorea], top3.rural.shp.list[rm.nkorea], top3.list[rm.nkorea], "stayathome"), write.csv.fxn)
 purrr::pmap(list(stringencyindex.split.df[[7]]$lockdown.date, top3.urban.shp.list[rm.nkorea], top3.rural.shp.list[rm.nkorea], top3.list[rm.nkorea], "restrictinternal"), write.csv.fxn)
 purrr::pmap(list(stringencyindex.split.df[[8]]$lockdown.date, top3.urban.shp.list, top3.rural.shp.list, top3.list, "restricttravel"), write.csv.fxn)
-purrr::pmap(list(stringencyindex.split.df[[9]]$lockdown.date, top3.urban.shp.list[rm.nkorea], top3.rural.shp.list[rm.nkorea], top3.list[rm.nkorea], "stringencyindex"), write.csv.fxn)
-
---- #DELETE 
-date.indexes <- date.index.fxn("2020-01-30")
-#2019 urban
-r.2019 <- weekly.list.2019[date.indexes]
-shape <- rep(world.urban.sf, length.out = length(r.2019))
-date.2019 <- dates.2019[date.indexes]
-urban.2019.weekly.df <- purrr::pmap_dfr(list(r.2019, shape, date.2019), world.extract.2019.fxn)
-#2020 urban
-r.2020 <- weekly.list.2020[date.indexes]
-date.2020 <- dates.2020[date.indexes]
-urban.2020.weekly.df <- purrr::pmap_dfr(list(r.2020, shape, date.2020), world.extract.2020.fxn)
-urban.weekly.df <- rbind(urban.2019.weekly.df, urban.2020.weekly.df) 
-
-write.csv(urban.weekly.df, file = 'time_series_csv/world.urban.weekly.NO2.csv')
-rm(urban.weekly.df, urban.2019.weekly.df, urban.2020.weekly.df)
-
-#2019 rural
-shape <- rep(world.rural.sf, length.out = length(r.2019))
-rural.2019.weekly.df <- purrr::pmap_dfr(list(r.2019, shape, date.2019), world.extract.2019.fxn)
-#2020 rural
-rural.2020.weekly.df <- purrr::pmap_dfr(list(r.2020, shape, date.2020), world.extract.2020.fxn)
-rural.weekly.df <- rbind(rural.2019.weekly.df, rural.2020.weekly.df) 
-
-write.csv(rural.weekly.df, file = 'time_series_csv/world.rural.weekly.NO2.csv')
-rm(rural.weekly.df, rural.2019.weekly.df, rural.2020.weekly.df)
----
+purrr::pmap(list(stringencyindex.split.df[[9]]$lockdown.date, top3.urban.shp.list[rm.nkorea.japan], top3.rural.shp.list[rm.nkorea.japan], top3.list[rm.nkorea.japan], "stringencyindex"), write.csv.fxn)
 ```
 
 #DELETE

@@ -1,0 +1,305 @@
+---
+title: "Code for HPC Server"
+author: "Alana Schreibman"
+date: "8/16/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+***
+```{r, eval = TRUE}
+#Load libraries needed. 
+library(easypackages)
+libraries("rgdal", "gdalUtils", "rgeos", "raster", "exactextractr", "rmapshaper", "maptools", "tigris", "ggplot2", "cowplot", "dplyr", "sp", "sf", "rgdal", "stringr", "RColorBrewer", "ggcorrplot", "pander", "forcats", "ggsn", "mapproj", "rlist", "lubridate", "ggpubr")
+```
+
+
+### Time analysis: NO2 and COVID changes during the COVID-19 pandemic.
+#### Preparation of stringency index data. 
+```{r, eval = TRUE}
+stringency.df <- read.csv(url("https://raw.githubusercontent.com/OxCGRT/covid-policy-tracker/master/data/OxCGRT_latest.csv"), na.strings = c("", "NA"), header = TRUE)
+stringency.df$Date <- as.factor(stringency.df$Date) %>% as.Date(stringency.df$Date, format = "%Y%m%d") 
+stringency.df.mod <- stringency.df %>% select(location = 1, RegionName, Date, C1_School.closing, C2_Workplace.closing, C3_Cancel.public.events, C4_Restrictions.on.gatherings, C5_Close.public.transport, C6_Stay.at.home.requirements, C7_Restrictions.on.internal.movement, C8_International.travel.controls, StringencyIndex)
+stringency.df.mod$location[stringency.df.mod$location=="Slovak Republic"] <- "Slovakia"
+stringency.df.mod$location[stringency.df.mod$location=="Czech Republic"] <- "Czechia"
+```
+
+
+#### Making list of all raster files in working directory and merging left and right world halves. 
+```{r, eval = TRUE}
+#gsutil -m cp \
+# >   "file names" \
+# >   /projects/users/alana/time_analysis_[right/left]_[2019/2020]
+
+# in terminal to copy all files from google cloud storage into folders in working directory.
+
+#Creates list of raster files from folder to call in function. 
+rastlist.2019.left <- list.files("/projects/users/alana/time_analysis_2019_left")
+rastlist.2019.right <- list.files("/projects/users/alana/time_analysis_2019_right")
+
+rastlist.2020.left <- list.files("/projects/users/alana/time_analysis_2020_left")
+rastlist.2020.right <- list.files("/projects/users/alana/time_analysis_2020_right")
+        
+#Function to make list of rasters for each week, combining left and right halves of world rasters.  
+raster.list.fxn <- function(year, x1, x2) {
+  left <- raster(paste0("time_analysis_", year, "_left_tot/", x1)) %>%
+    flip(direction='y') 
+  left.c <- left
+  left.c[left.c < -0.001] <- NA #Filters out only outliers. 
+  right <- raster(paste0("time_analysis_", year, "_right_tot/", x2)) %>%
+    flip(direction='y') 
+  right.c <- right
+  right.c[right.c < -0.001] <- NA
+  world.NO2.r <- raster::mosaic(left.c, right.c, fun=mean) #Combines left and right halves of world raster.
+  world.NO2.r
+}
+
+x1 <- as.list(rastlist.2019.left)
+x2 <- as.list(rastlist.2019.right)
+weekly.list.2019 <- purrr::pmap(list(as.character("2019"), x1, x2), raster.list.fxn)
+                   
+x1 <- as.list(rastlist.2020.left)
+x2 <- as.list(rastlist.2020.right)
+weekly.list.2020 <- purrr::pmap(list(as.character("2020"), x1, x2), raster.list.fxn)   
+```
+
+
+#### Test code: new method to prepare urban/rural shapefiles for all countries . 
+```{r, eval = FALSE}
+large.area <- weighted.covid.NO2.df %>% filter(Area > 4000)
+large.area.names <- unlist(list(large.area$location))
+
+#Reprojecting and buffering world urban shapefile for use in making country urban shapefiles.
+world.urban.sp <- as(world.sf, Class = "Spatial")
+world.urban.sp <- spTransform(world.urban.sp, "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
+world.urban.sp <- gSimplify(world.urban.sp, tol = 0.00001, topologyPreserve=TRUE)
+world.urban.sp <- gBuffer(world.urban.sp, byid=TRUE, width=0)
+world.urban.sf <- st_as_sf(world.urban.sp)
+
+#wrld_simpl <- spTransform(wrld_simpl, CRS("+init=epsg:4326 +proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs"))
+wrld_simpl.sp <- spTransform(wrld_simpl,"+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
+wrld_simpl.sp <- gBuffer(wrld_simpl.sp, byid=TRUE, width=0)
+wrld_simpl.sf <- st_as_sf(wrld_simpl.sp)
+
+#Urban shapefiles.
+urban.shp.fxn <- function(location) {
+  country.shp <- wrld_simpl.sf[wrld_simpl.sf$NAME == as.character(location), ]
+  #country.shp <- rgeos::gSimplify(as(country.shp, 'Spatial'), tol = 0.00001, topologyPreserve=TRUE) %>% st_as_sf()  
+  urban.country.poly <- st_intersection(st_make_valid(st_geometry(country.shp)), st_geometry(world.urban.sf))
+  urban.country.single <- st_combine(urban.country.poly)
+  urban.country.sf <- st_as_sf(urban.country.single)
+  urban.country.sf <- st_transform(urban.country.sf, "+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs")  
+  urban.country.sf
+}
+
+total.urban.shp.list <- purrr::map(large.area.names, urban.shp.fxn) #Makes list of urban shapefiles by country. 
+
+#Rural shapefiles.
+rural.shp.fxn <- function(location, n) {
+  country.shp <- wrld_simpl.sf[wrld_simpl.sf$NAME == location, ]
+  #country.shp <- gSimplify(as(country.shp, 'Spatial'), tol = 0.00001, topologyPreserve=TRUE) %>% st_as_sf()  
+  country.urban.sf <- top3.urban.shp.list[[n]]
+  country.urban.sf <- st_transform(country.urban.sf,"+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
+  #country.rural.poly <- st_difference(st_make_valid(st_geometry(country.shp)), st_make_valid(st_geometry(country.urban.sf)))
+  country.rural.poly <- ms_erase(country.shp, country.urban.sf)
+  rural.country.single <- st_combine(country.rural.poly)
+  country.rural.sf <- st_as_sf(rural.country.single)
+  country.rural.sf <- st_transform(country.rural.sf, "+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs")
+  country.rural.sf
+} #Will use later once top 3 countries for ITS have been identified. 
+
+#Urban world shapefile.
+wrld_simpl.simp.sf <- gSimplify(wrld_simpl.sp, tol = 0.00001, topologyPreserve=TRUE) %>% st_as_sf()  
+world.urban.intersection.sf <- st_intersection(st_make_valid(st_geometry(wrld_simpl.simp.sf)), st_geometry(world.urban.sf))
+world.urban.intersection.single <- st_combine(world.urban.intersection.sf)
+world.urban.intersection.rob.sf <- st_as_sf(world.urban.intersection.single)
+world.urban.intersection.sf <- st_transform(world.urban.intersection.rob.sf, "+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs")
+
+#Rural world shapefile.
+wrld_simpl.sp <- spTransform(wrld_simpl,"+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
+wrld_simpl.sp <- gSimplify(wrld_simpl.sp, tol = 0.00001)
+wrld_simpl.sp <- gBuffer(wrld_simpl.sp, byid=TRUE, width=0)
+wrld_simpl.sf <- st_as_sf(wrld_simpl.sp)
+
+world.rural.sp <- gDifference(wrld_simpl.sp, world.urban.sp)
+world.rural.sp.valid <- gMakeValid(world.rural.sp)
+world.rural.sp.poly <- world.rural.sp.valid@polyobj
+world.rural.sf.valid <- st_as_sf(world.rural.sp.poly)
+world.rural.sf <- st_transform(world.rural.sf.valid, "+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs")  
+```
+
+
+#### Test code: Extracting averages over 2019 by country to determine which countries to perform ITS on. 
+```{r, eval = FALSE}
+#Extracting averages over 2019 by country: averages of urban areas by country week of 2019-01-02 through week of 2019-12-25. 
+#Used for deciding which countries per region to perform ITS on (by highest urban NO2 concentration).
+world.extract.2019.fxn <- function(raster.list, shape, location) {
+  r.mean <- exactextractr::exact_extract(raster.list, shape, weights = 'area', 'mean') 
+  df <- data.frame("NO2_Concentration" = r.mean)
+  location <- rep(location, length.out = nrow(df))
+  weekly.2019 <- cbind(df, location) 
+  weekly.2019
+}
+
+raster.list <- rep(weekly.list.2019[seq(81, 81+362, 7)], 131)
+shape <- rep(total.urban.shp.list, each = 52)
+location <- rep(large.area.names, each = 52)
+urban.2019.averages <- purrr::pmap_dfr(list(raster.list, shape, location), world.extract.2019.fxn)
+urban.2019.averages$location <- as.factor(urban.2019.averages$location)
+
+urban.2019.averages <- urban.2019.averages %>% 
+  group_by(location) %>% 
+  summarize(Mean_Urban_NO2 = mean(NO2_Concentration, na.rm = T))
+full.df <- full_join(weighted.covid.NO2.df, urban.2019.averages) %>% select(Super.region, Regions, location, Mean_Urban_NO2) %>% arrange(desc(Mean_Urban_NO2)) #Keeps only countries with large areas and sorts by urban NO2 concentration. 
+full.df <- left_join(full.df, stringency.df.filtered)
+split.df <- full.df %>% split(full.df$Super.region) 
+split.df.top3 <- lapply(split.df, function(x) {x %>% top_n(5, Mean_Urban_NO2)
+})
+split.df.top5 <- do.call("rbind", split.df.top3)
+write.csv(split.df.top5, file = 'split.df.top.urban.csv')
+```
+
+
+#### Test code: making urban/rural shapefiles only for top 3 countries for ITS. 
+```{r, eval = FALSE}
+df.top5 <- read.csv(file = 'split.df.top.urban.csv')
+split.df.top5 <- df.top5 %>% split(df.top5$Super.region) 
+split.df.top3 <- lapply(split.df.top5, function(x) {x %>% top_n(3, Mean_Urban_NO2)
+})
+df.top3 <- do.call("rbind", split.df.top3)
+top3.list <- df.top3$location
+
+top3.urban.shp.list <- purrr::map(top3.list, urban.shp.fxn) #Makes list of urban shapefiles by country. 
+
+n <- 1:21
+top3.rural.shp.list <- purrr::pmap(list(top3.list, n), rural.shp.fxn) #Makes list of rural shapefiles for every large country.
+```
+
+
+#### Making data frame for list of lockdown dates by stringency index category. 
+```{r, eval = TRUE}
+#Function to find the date that each index becomes positive. 
+lockdown.date.fxn <- function(country, column, n) {
+  lockdown.date <- stringency.df.mod %>% filter(location == country, is.na(RegionName)) %>% subset(.[, column] != 0) %>% .[1, 3] 
+  dates.df <- data.frame(lockdown.date)
+  Index.type <- column[n]
+  Country <- country[n]
+  cbind(Country, Index.type, dates.df)
+}  
+
+#Uses stringency index 50 as cutoff. 
+lockdown.date.fxn <- function(country, column) {
+  if (column == "StringencyIndex") {
+     lockdown.date <- stringency.df.mod %>% filter(location == country, is.na(RegionName)) %>% subset(.[, column] >= 50) %>% .[1, 3] 
+  } else {
+    lockdown.date <- stringency.df.mod %>% filter(location == country, is.na(RegionName)) %>% subset(.[, column] != 0) %>% .[1, 3] 
+  }
+  dates.df <- data.frame(lockdown.date)
+  Index.type <- column
+  Country <- country
+  cbind(Country, Index.type, dates.df)
+}  
+
+countries <- rep(top3.list, each = 9)
+indexnames <- colnames(stringency.df.mod) 
+indexnames <- indexnames[4:12]
+indexnames <- rep(indexnames, 21)
+
+stringencyindex.df <- purrr::pmap_dfr(list(countries, indexnames), lockdown.date.fxn)
+stringencyindex.df$Index.type <- as.factor(stringencyindex.df$Index.type)
+stringencyindex.df[[152, 3]] <- as.Date("2020-01-23") #No Oxford index data on North Korea, only info online is international travel lockdown date: https://www.wired.com/story/truth-about-north-koreas-ultra-lockdown-covid-19/
+stringencyindex.df[[39, 3]] <- as.Date("2020-02-28") #Changed 02-29 date to 02-28 to avoid leap year problems. 
+stringencyindex.df[[49, 3]] <- NA #Removed value for Japan restrictions on gatherings because date was in 2021 (outside of study period).
+stringencyindex.df[[50, 3]] <- NA #Removed value for Japan closing public transport because date was in late 2020 (outside of study period).
+stringencyindex.df[[54, 3]] <- NA #Removed value for Japan stringency index because date was in 2021 (outside of study period).
+stringencyindex.df[[41, 3]] <- NA #Removed value for Germany closing public transport because date was late 2020 (outside of study period).
+stringencyindex.df[[158, 3]] <- NA #Removed value for Malaysia closing public transport because date was late 2020 (outside of study period).
+stringencyindex.df.complete <- na.omit(stringencyindex.df) #Omits North Korea missing values, as well as South Korea, Japan, and Germany missing values. 
+stringencyindex.split.df <- stringencyindex.df.complete %>% split(stringencyindex.df.complete$Index.type)
+```
+
+
+#### Test code: new method to extract country weekly data frames for ITS analysis. 
+```{r, eval = FALSE}
+#Function to write urban and rural csv for each country. 
+write.csv.fxn <- function(lockdown.date, country.urban.sf, country.rural.sf, location, date.type) {
+  #Creates list of dates to filter based on lockdown date for use in extract functions. 
+  dates.2019 <- seq(as.Date("2018-10-13"), as.Date("2019-12-31"), by = 1)
+  d1 <- seq(as.Date("2019-10-13"), as.Date("2020-02-28"), by=1)  
+  d2 <-  seq(as.Date("2020-03-01"), as.Date("2020-12-31"), by=1)
+  dates.2020 <- c(d1, d2)
+  
+  #Function to extract dataframe of weekly country data for both urban and rural. 
+  world.extract.2019.fxn <- function(r, shape, country, date) {
+  r.mean <- exact_extract(r, shape, weights = 'area', 'mean') 
+  final.df <- data.frame("NO2_Concentration" = r.mean)   
+  Location <- rep(as.character(country), length.out = nrow(final.df))
+  Date <- as.factor((date %m+% years(1))) #Adds 1 year to date to match x axis of 2020 dates.
+  Week <- paste0(as.character(date), " to ", as.character((date) + 6))
+  Period <- rep(2019, length.out = nrow(final.df)) 
+  weekly.2019 <- cbind(final.df, Location, Period, Date, Week) 
+  weekly.2019 <- weekly.2019 %>% select(Location, Period, Date, Week, NO2_Concentration)
+}
+
+world.extract.2020.fxn <- function(r, shape, country, date) {
+  r.mean <- exact_extract(r, shape, weights = 'area', 'mean') 
+  final.df <- data.frame("NO2_Concentration" = r.mean)   
+  Date <- as.factor(date)
+  Location <- rep(as.character(country), length.out = nrow(final.df))
+  Week <- paste0(as.character(date), " to ", as.character((date) + 6))
+  Period <- rep(2020, length.out = nrow(final.df)) 
+  weekly.2020 <- cbind(final.df, Location, Period, Date, Week) 
+  weekly.2020 <- weekly.2020 %>% select(Location, Period, Date, Week, NO2_Concentration)
+}
+
+  #Finds indexes to use for rasters and dates based on input of lockdown date. 
+  lockdown <- lockdown.date
+  index <- which(dates.2020 %in% lockdown)
+  pre <- rev(seq(index, 1, by = -7))
+  post <- seq(index+7, 445, by = 7)
+  date.indexes <- c(pre, post)
+  #2019 urban
+    r.2019 <- weekly.list.2019[date.indexes]
+    shape <- rep(country.urban.sf, length.out = length(r.2019))
+    location.arg <- rep(as.character(location), length.out = length(r.2019))
+    date.2019 <- dates.2019[date.indexes]
+  urban.2019.weekly.df <- purrr::pmap_dfr(list(r.2019, shape, location.arg, date.2019), world.extract.2019.fxn)
+  #2020 urban
+    r.2020 <- weekly.list.2020[date.indexes]
+    date.2020 <- dates.2020[date.indexes]
+  urban.2020.weekly.df <- purrr::pmap_dfr(list(r.2020, shape, location.arg, date.2020), world.extract.2020.fxn)
+  urban.weekly.df <- rbind(urban.2019.weekly.df, urban.2020.weekly.df) 
+
+  write.csv(urban.weekly.df, file.path("projects/users/alana/files_to_export", paste0("time_series_csv/", location, ".urban.weekly.NO2.", date.type, ".csv")))
+  #rm(urban.weekly.df, urban.2019.weekly.df, urban.2020.weekly.df)
+  #2019 rural
+    shape <- rep(country.rural.sf, length.out = length(r.2019))
+    rural.2019.weekly.df <- purrr::pmap_dfr(list(r.2019, shape, location, date.2019), world.extract.2019.fxn)
+  #2020 rural
+    rural.2020.weekly.df <- purrr::pmap_dfr(list(r.2020, shape, location, date.2020), world.extract.2020.fxn)
+    rural.weekly.df <- rbind(rural.2019.weekly.df, rural.2020.weekly.df) 
+
+    write.csv(rural.weekly.df, file.path("projects/users/alana/files_to_export", paste0("time_series_csv/", location, ".rural.weekly.NO2.", date.type, ".csv")))
+    #rm(rural.weekly.df, rural.2019.weekly.df, rural.2020.weekly.df)
+}
+
+#World
+write.csv.fxn(as.Date("2020-01-23"), world.urban.intersection.sf, world.rural.sf, "world", "whodeclaration")
+#Other countries
+rm.nkorea <- c(1:16, 18:21)
+rm.nskorea <- c(1:3, 5:16, 18:21)
+rm.nkorea.japan <- c(1:5, 7:16, 18:21)
+
+purrr::pmap(list(stringencyindex.split.df[[1]]$lockdown.date, top3.urban.shp.list[rm.nkorea], top3.rural.shp.list[rm.nkorea], top3.list[rm.nkorea], "schoolclosing"), write.csv.fxn)
+purrr::pmap(list(stringencyindex.split.df[[2]]$lockdown.date, top3.urban.shp.list[rm.nkorea], top3.rural.shp.list[rm.nkorea], top3.list[rm.nkorea], "workplaceclosing"), write.csv.fxn)
+purrr::pmap(list(stringencyindex.split.df[[3]]$lockdown.date, top3.urban.shp.list[rm.nkorea], top3.rural.shp.list[rm.nkorea], top3.list[rm.nkorea], "cancelevents"), write.csv.fxn)
+purrr::pmap(list(stringencyindex.split.df[[4]]$lockdown.date, top3.urban.shp.list[rm.nkorea.japan], top3.rural.shp.list[rm.nkorea.japan], top3.list[rm.nkorea.japan], "restrictgatherings"), write.csv.fxn)
+purrr::pmap(list(stringencyindex.split.df[[5]]$lockdown.date, top3.urban.shp.list[rm.nskorea], top3.rural.shp.list[rm.nskorea], top3.list[rm.nskorea], "closetransport"), write.csv.fxn)
+purrr::pmap(list(stringencyindex.split.df[[6]]$lockdown.date, top3.urban.shp.list[rm.nkorea], top3.rural.shp.list[rm.nkorea], top3.list[rm.nkorea], "stayathome"), write.csv.fxn)
+purrr::pmap(list(stringencyindex.split.df[[7]]$lockdown.date, top3.urban.shp.list[rm.nkorea], top3.rural.shp.list[rm.nkorea], top3.list[rm.nkorea], "restrictinternal"), write.csv.fxn)
+purrr::pmap(list(stringencyindex.split.df[[8]]$lockdown.date, top3.urban.shp.list, top3.rural.shp.list, top3.list, "restricttravel"), write.csv.fxn)
+purrr::pmap(list(stringencyindex.split.df[[9]]$lockdown.date, top3.urban.shp.list[rm.nkorea.japan], top3.rural.shp.list[rm.nkorea.japan], top3.list[rm.nkorea.japan], "stringencyindex"), write.csv.fxn)
+```

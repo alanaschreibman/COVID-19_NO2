@@ -109,23 +109,153 @@ end_time - start_time
 
 #All countries using cloud storage: making into function where coordinates and country name are inputs. 
 countries.NO2.fxn <- function(date.start, date.end, minx, miny, maxx, maxy, country) {
-  image1 <- ee$ImageCollection("COPERNICUS/S5P/NRTI/L3_NO2")$filterDate(date.start, date.end)$select("tropospheric_NO2_column_number_density") %>% ee$ImageCollection$mean()
+  image1 <- ee$ImageCollection("COPERNICUS/S5P/OFFL/L3_NO2")$filterDate(date.start, date.end)$select("tropospheric_NO2_column_number_density") 
+  image.mean <- image1$reduce(
+    ee$Reducer$mean()
+    )
   geometry <- ee$Geometry$Rectangle(
-  coords = c(minx, miny, maxx, maxy),
-  scale = NULL,
-  crs = 'EPSG:4326'
+  coords = c(minx, miny, maxx, maxy)
     )
   NO2.world.countries <- ee_image_to_gcs(
-    image = image1,
+    scale = 1113.1949079327358,
+    crs = 'EPSG:4326',
+    image = image.mean,
     region = geometry,
     bucket = "rgee_bucket", 
     fileFormat = "GEO_TIFF",
-    fileNamePrefix = paste0((country), "_NO2_", (date.start))
+    fileNamePrefix = paste0((country), "_NO2_", (date.start)),
+    maxPixels = 1e13
   )
   output1 <- NO2.world.countries$start()
   output2 <- ee_monitoring(NO2.world.countries)
   return(c(output1, output2))
 } 
+
+#TEST: delete later
+---
+gee.download.fxn <- function(date.start) {
+image1 <- ee$ImageCollection("COPERNICUS/S5P/OFFL/L3_NO2")$filterDate(date.start, as.character(as.Date(date.start) + 6))$select("tropospheric_NO2_column_number_density") 
+image.mean <- image1$reduce(
+    ee$Reducer$mean()
+    )
+image.mean
+}
+
+dates.2019 <- seq(as.Date("2018-10-13"), as.Date("2019-12-31"), by = 1)
+dates.2019 <- sapply(dates.2019, function(x) {as.character(x) 
+  })
+d1 <- seq(as.Date("2019-10-13"), as.Date("2020-02-28"), by=1)  
+d2 <-  seq(as.Date("2020-03-01"), as.Date("2020-12-31"), by=1)
+dates.2020 <- c(d1, d2)
+dates.2020 <- sapply(dates.2020, function(x) {as.character(x) 
+  })
+gee.2019.list <- purrr::map(dates.2019, gee.download.fxn)
+gee.2020.list <- purrr::map(dates.2020, gee.download.fxn)
+
+poland.urban <- sf_as_ee(top3.urban.shp.list[[1]])
+poland.rural <- sf_as_ee(top3.rural.shp.list[[1]])
+
+poland.extract.pre <- ee_extract(
+ x = gee.2020.list[[82]],
+ y = test2,
+ scale = 1113.1949079327358
+)
+poland.extract.pre
+poland.extract 
+
+ee_print(gee.2019.list[[1]])
+Map$setCenter(9.08203, 47.39835, 3)
+Map$addLayer(
+  eeObject = gee.2019.list[[1]],
+  visParams = list(
+    min = 0,
+    max = 6E-4,
+    palette = "c('black', 'blue', 'purple', 'cyan', 'green', 'yellow', 'red')"
+  ),
+  name = "stable lights trend"
+)
+
+test <- raster("Left World_NO2_2020-01-01_2021_08_11_11_05_20.tif") 
+plot(test2)
+plot(wrld_simpl, add = T)
+
+#TEST: new method of using raster files as local GEE objects
+#Function to write urban and rural csv for each country. 
+write.csv.fxn <- function(lockdown.date, country.urban.sf, country.rural.sf, location, date.type) {
+  #Creates list of dates to filter based on lockdown date for use in extract functions. 
+  dates.2019 <- seq(as.Date("2018-10-13"), as.Date("2019-12-31"), by = 1)
+  d1 <- seq(as.Date("2019-10-13"), as.Date("2020-02-28"), by=1)  
+  d2 <-  seq(as.Date("2020-03-01"), as.Date("2020-12-31"), by=1)
+  dates.2020 <- c(d1, d2)
+  
+  #Function to extract dataframe of weekly country data for both urban and rural. 
+  world.extract.2019.fxn <- function(r, shape, country, date) {
+  r.mean <- ee_extract(
+    x = r,
+    y = shape,
+    scale = 1113.1949079327358
+  )
+  r.mean <- r.mean[1, 1]
+  final.df <- data.frame("NO2_Concentration" = r.mean)   
+  Location <- rep(as.character(country), length.out = nrow(final.df))
+  Date <- as.factor((date %m+% years(1))) #Adds 1 year to date to match x axis of 2020 dates.
+  Week <- paste0(as.character(date), " to ", as.character((date) + 6))
+  Period <- rep(2019, length.out = nrow(final.df)) 
+  weekly.2019 <- cbind(final.df, Location, Period, Date, Week) 
+  weekly.2019 <- weekly.2019 %>% select(Location, Period, Date, Week, NO2_Concentration)
+}
+
+world.extract.2020.fxn <- function(r, shape, country, date) {
+  r.mean <- ee_extract(
+    x = r,
+    y = shape,
+    scale = 1113.1949079327358
+  )
+  r.mean <- r.mean[1, 1]
+  final.df <- data.frame("NO2_Concentration" = r.mean)   
+  Date <- as.factor(date)
+  Location <- rep(as.character(country), length.out = nrow(final.df))
+  Week <- paste0(as.character(date), " to ", as.character((date) + 6))
+  Period <- rep(2020, length.out = nrow(final.df)) 
+  weekly.2020 <- cbind(final.df, Location, Period, Date, Week) 
+  weekly.2020 <- weekly.2020 %>% select(Location, Period, Date, Week, NO2_Concentration)
+}
+
+  #Finds indexes to use for rasters and dates based on input of lockdown date. 
+  lockdown <- lockdown.date
+  index <- which(dates.2020 %in% lockdown)
+  pre <- rev(seq(index, 1, by = -7))
+  post <- seq(index+7, 445, by = 7)
+  date.indexes <- c(pre, post)
+  #2019 urban
+    r.2019 <- gee.2019.list[date.indexes]
+    shape <- rep(country.urban.sf, length.out = length(r.2019))
+    location.arg <- rep(as.character(location), length.out = length(r.2019))
+    date.2019 <- dates.2019[date.indexes]
+  urban.2019.weekly.df <- purrr::pmap_dfr(list(r.2019, shape, location.arg, date.2019), world.extract.2019.fxn)
+  #2020 urban
+    r.2020 <- gee.2020.list[date.indexes]
+    date.2020 <- dates.2020[date.indexes]
+  urban.2020.weekly.df <- purrr::pmap_dfr(list(r.2020, shape, location.arg, date.2020), world.extract.2020.fxn)
+  urban.weekly.df <- rbind(urban.2019.weekly.df, urban.2020.weekly.df) 
+
+  write.csv(urban.weekly.df, file = paste0("time_series_csv/", location, ".urban.weekly.NO2.", date.type, ".csv"))
+  #rm(urban.weekly.df, urban.2019.weekly.df, urban.2020.weekly.df)
+  #2019 rural
+    shape <- rep(country.rural.sf, length.out = length(r.2019))
+    rural.2019.weekly.df <- purrr::pmap_dfr(list(r.2019, shape, location, date.2019), world.extract.2019.fxn)
+  #2020 rural
+    rural.2020.weekly.df <- purrr::pmap_dfr(list(r.2020, shape, location, date.2020), world.extract.2020.fxn)
+    rural.weekly.df <- rbind(rural.2019.weekly.df, rural.2020.weekly.df) 
+
+    write.csv(rural.weekly.df, file = paste0("time_series_csv/", location, ".rural.weekly.NO2.", date.type, ".csv"))
+    #rm(rural.weekly.df, rural.2019.weekly.df, rural.2020.weekly.df)
+}
+
+purrr::pmap(list(stringencyindex.split.df[[1]]$lockdown.date[[1]], poland.urban, poland.rural, "Poland", "schoolclosing"), write.csv.fxn)
+---
+  
+  
 
 #Selected 10 countries for exploratory analysis. 
 countries.NO2.fxn(-180, 19, -66, 71.5, "United States")
@@ -253,31 +383,17 @@ for (i in 1:length(dates.2019)) {
   countries.NO2.fxn(as.character(as.Date(dates.2019[[i]])), as.character(as.Date(dates.2019[[i]]) + 6), 0, -90, 180, 90, "Right_Half_World")
 }
 
-#DELETE LATER (old dates going by weekly rather than weekly on every day for versatility)
-d1 <- seq(as.Date("2019-10-31"), as.Date("2020-02-26"), by=7)
-d2 <- seq(as.Date("2020-02-27"), as.Date("2020-03-05"), by=8) 
-d3 <- seq(as.Date("2020-03-06"), as.Date("2020-12-31"), by=7) 
-dates.2020 <- c(d1, d2, d3)
-
-#Keep
 d1 <- seq(as.Date("2019-10-13"), as.Date("2020-02-28"), by=1)  
 d2 <-  seq(as.Date("2020-03-01"), as.Date("2020-12-31"), by=1)
 dates.2020 <- c(d1, d2)
-
-#Use for now, delete later 
-d <- seq(as.Date("2019-10-13"), as.Date("2019-10-30"), by=1)  
-
-d1 <- seq(as.Date("2019-10-31"), as.Date("2020-02-28"), by=1)  
-d2 <-  seq(as.Date("2020-03-01"), as.Date("2020-12-31"), by=1)
-dd <- c(d1, d2)
-dd <- dd[-(seq(1, 427, 7))]
-dates.2020 <- c(d, dd)
+dates.2020 <- dates.2020[81:445]
 for (i in 1:length(dates.2020)) {
   countries.NO2.fxn(as.character(as.Date(dates.2020[[i]])), as.character(as.Date(dates.2020[[i]]) + 6),-180, -90, 0, 90, "Left_Half_World")
 }
 for (i in 1:length(dates.2020)) {
   countries.NO2.fxn(as.character(as.Date(dates.2020[[i]])), as.character(as.Date(dates.2020[[i]]) + 6), 0, -90, 180, 90, "Right_Half_World")
 }
+
 #Czechia
 dates.2019 <- seq(as.Date("2018-12-01"), as.Date("2020-01-03"), by=7) 
 for (i in 1:length(dates.2019)) {
@@ -505,7 +621,7 @@ wrld_simpl[wrld_simpl$NAME == "Panama", ]
 #Congo 
   #
 #Nigeria 
-  #
+
 
 ```
 

@@ -60,11 +60,24 @@ stringency.df.mod$location[stringency.df.mod$location=="Slovak Republic"] <- "Sl
 stringency.df.mod$location[stringency.df.mod$location=="Czech Republic"] <- "Czechia"
 
 #Function to find the date that each index becomes positive. 
-lockdown.date.fxn <- function(country, column, n) {
+lockdown.date.fxn <- function(country, column) {
   lockdown.date <- stringency.df.mod %>% filter(location == country, is.na(RegionName)) %>% subset(.[, column] != 0) %>% .[1, 3] 
   dates.df <- data.frame(lockdown.date)
-  Index.type <- column[n]
-  Country <- country[n]
+  Index.type <- column
+  Country <- country
+  cbind(Country, Index.type, dates.df)
+} 
+
+#Uses stringency index 50 as cutoff. 
+lockdown.date.fxn <- function(country, column) {
+  if (column == "StringencyIndex") {
+     lockdown.date <- stringency.df.mod %>% filter(location == country, is.na(RegionName)) %>% subset(.[, column] >= 50) %>% .[1, 3] 
+  } else {
+    lockdown.date <- stringency.df.mod %>% filter(location == country, is.na(RegionName)) %>% subset(.[, column] != 0) %>% .[1, 3] 
+  }
+  dates.df <- data.frame(lockdown.date)
+  Index.type <- column
+  Country <- country
   cbind(Country, Index.type, dates.df)
 }  
 
@@ -79,6 +92,7 @@ stringencyindex.df[[152, 3]] <- as.Date("2020-01-23") #No Oxford index data on N
 stringencyindex.df[[39, 3]] <- as.Date("2020-02-28") #Changed 02-29 date to 02-28 to avoid leap year problems. 
 stringencyindex.df[[49, 3]] <- NA #Removed value for Japan restrictions on gatherings because date was in 2021 (outside of study period).
 stringencyindex.df[[50, 3]] <- NA #Removed value for Japan closing public transport because date was in late 2020 (outside of study period).
+stringencyindex.df[[54, 3]] <- NA #Removed value for Japan stringency index because date was in 2021 (outside of study period).
 stringencyindex.df[[41, 3]] <- NA #Removed value for Germany closing public transport because date was late 2020 (outside of study period).
 stringencyindex.df[[158, 3]] <- NA #Removed value for Malaysia closing public transport because date was late 2020 (outside of study period).
 stringencyindex.df.complete <- na.omit(stringencyindex.df) #Omits North Korea missing values, as well as South Korea, Japan, and Germany missing values. 
@@ -111,7 +125,6 @@ ITS.plot.fxn <- function(df, index.title, location, date.start, date.lockdown.st
         axis.text.y=element_text(size=10),
         axis.text.x=element_text(size=10,angle=90, hjust=1)) +
   labs(fill = "Year of Measured Pollution") +
-
   ggtitle(paste(location, "NO2,", index.title, "as interruption,\n", as.character(format((as.Date(date.start) %m-% years(1)), "%b %Y")), "-", as.character(format((as.Date(date.end) %m-% years(1)), "%b %Y")), "vs", as.character(format(as.Date(date.start), "%b %Y")), "-", as.character(format(as.Date(date.end), "%b %Y")))) +
   ylab("NO2 Concentration (mol/m^2)") +
   scale_x_date(date_labels = "%b",date_breaks = "1 month",expand=c(0,0),limits=c(as.Date(date.start,format="%Y-%m-%d"),as.Date(date.end,format="%Y-%m-%d"))) +
@@ -130,21 +143,21 @@ ITS.plot.fxn <- function(df, index.title, location, date.start, date.lockdown.st
 
 #Helpful to define lists for later. 
 file.index.list <- c("schoolclosing", "workplaceclosing", "cancelevents", "restrictgatherings", "closetransport", "stayathome", "restrictinternal", "restricttravel", "stringencyindex")
-index.title.list <- c("school closures", "workplace closures", "cancelled public events", "restrictions on gatherings", "public transport closures", "stay at home orders", "restrictions on internal travel", "restrictions on international travel", "overall lockdown stringency index")
+index.title.list <- c("school closures", "workplace closures", "cancelled public events", "restrictions on gatherings", "public transport closures", "stay at home orders", "restrictions on internal travel", "restrictions on international travel", "lockdown stringency index")
 ```
 
 
 ### ITS yearly plots by country
 ```{r, fig.width=10, fig.height=10, eval = TRUE}
-#World 
-#world.urban.year.df.list <- purrr::pmap(list("World", "urban", "whodeclaration"), NO2.df.filter.fxn)
-#world.rural.year.df.list <- purrr::pmap(list("World", "rural", "whodeclaration"), NO2.df.filter.fxn)
+World 
+world.urban.year.df.list <- purrr::pmap(list("World", "urban", "whodeclaration"), NO2.df.filter.fxn)
+world.rural.year.df.list <- purrr::pmap(list("World", "rural", "whodeclaration"), NO2.df.filter.fxn)
 
-#world.urban.year.plot <- purrr::pmap(list(world.urban.year.df.list, "WHO Declaration of Pandemic", "World urban", "2019-12-01", as.Date("2020-01-23"), "2020-12-24"), ITS.plot.fxn)
-#world.rural.year.plot <- purrr::pmap(list(world.rural.year.df.list, "WHO Declaration of Pandemic", "World rural", "2019-12-01", as.Date("2020-01-23"), "2020-12-24"), ITS.plot.fxn)
+world.urban.year.plot <- purrr::pmap(list(world.urban.year.df.list, "WHO Declaration of Pandemic", "World urban", "2019-12-01", as.Date("2020-01-23"), "2020-12-24"), ITS.plot.fxn)
+world.rural.year.plot <- purrr::pmap(list(world.rural.year.df.list, "WHO Declaration of Pandemic", "World rural", "2019-12-01", as.Date("2020-01-23"), "2020-12-24"), ITS.plot.fxn)
 
-#purrr::pmap(list(world.urban.year.plot, world.rural.year.plot), function(x,y) {plot_grid(x, y, labels = c('A', 'B'), ncol = 1) 
-#}) #Combines country's urban and rural for each index. 
+purrr::pmap(list(world.urban.year.plot, world.rural.year.plot), function(x,y) {plot_grid(x, y, labels = c('A', 'B'), ncol = 1) 
+}) #Combines country's urban and rural for each index. 
 
 #Poland
 poland.urban.year.df.list <- purrr::pmap(list("Poland", "urban", file.index.list), NO2.df.filter.fxn)
@@ -197,11 +210,11 @@ purrr::pmap(list(germany.urban.year.plot, germany.rural.year.plot), function(x,y
 }) #Combines country's urban and rural for each index.
 
 #Japan
-japan.urban.year.df.list <- purrr::pmap(list("Japan", "urban", file.index.list[c(1:3, 6:9)]), NO2.df.filter.fxn)
-japan.rural.year.df.list <- purrr::pmap(list("Japan", "rural", file.index.list[c(1:3, 6:9)]), NO2.df.filter.fxn)
+japan.urban.year.df.list <- purrr::pmap(list("Japan", "urban", file.index.list[c(1:3, 6:8)]), NO2.df.filter.fxn)
+japan.rural.year.df.list <- purrr::pmap(list("Japan", "rural", file.index.list[c(1:3, 6:8)]), NO2.df.filter.fxn)
 
-japan.urban.year.plot <- purrr::pmap(list(japan.urban.year.df.list, index.title.list[c(1:3, 6:9)], "Japan urban", "2019-10-31", stringencyindex.split.country.df[[6]]$lockdown.date, "2020-12-24"), ITS.plot.fxn)
-japan.rural.year.plot <- purrr::pmap(list(japan.rural.year.df.list, index.title.list[c(1:3, 6:9)], "Japan rural", "2019-10-31", stringencyindex.split.country.df[[6]]$lockdown.date, "2020-12-24"), ITS.plot.fxn)
+japan.urban.year.plot <- purrr::pmap(list(japan.urban.year.df.list, index.title.list[c(1:3, 6:8)], "Japan urban", "2019-10-31", stringencyindex.split.country.df[[6]]$lockdown.date, "2020-12-24"), ITS.plot.fxn)
+japan.rural.year.plot <- purrr::pmap(list(japan.rural.year.df.list, index.title.list[c(1:3, 6:8)], "Japan rural", "2019-10-31", stringencyindex.split.country.df[[6]]$lockdown.date, "2020-12-24"), ITS.plot.fxn)
 
 purrr::pmap(list(japan.urban.year.plot, japan.rural.year.plot), function(x,y) {plot_grid(x, y, labels = c('A', 'B'), ncol = 1) 
 }) #Combines country's urban and rural for each index.
@@ -587,7 +600,7 @@ period_scatter_plot <- function(data,ylim,location,lockdown.date,index.type,mode
   #plot for 2019
   data.2019 <- data %>% filter(., year2020 == 0) %>% select(., NO2_Concentration, no_of_weeks) 
 
-  plot(NO2_Concentration ~ no_of_weeks, data = data.2019, type="n",ylim=c(00,ylim),xlab="Date", ylab=paste0("NO2 estimates"), bty="l", xaxt="n", cex.main=0.5, cex.lab=0.6, cex.axis=0.4)
+  plot(NO2_Concentration ~ no_of_weeks, data = data.2019, type="n",ylim=c(00,ylim),xlab="Date", ylab=expression(paste(NO[2], " ", "estimates, (mol/", m^2, ")")), bty="l", xaxt="n", cex.main=0.5, cex.lab=0.6, cex.axis=0.4, las = 1)
   rect(12,0,24,ylim,col=grey(0.9),border=F)
   points(NO2_Concentration ~ no_of_weeks,data = data.2019,cex=0.7,pch=16,col=alpha(col[1],0.5))
   legend("topright", inset=.05, legend=c("2019", "2020"), col=alpha(col,0.5),pch=16,cex=0.7)
@@ -595,7 +608,7 @@ period_scatter_plot <- function(data,ylim,location,lockdown.date,index.type,mode
   #plot for 2020
    data.2020 <- data %>% filter(., year2020 == 1) %>% select(., NO2_Concentration, no_of_weeks) 
   par(new=TRUE, cex.axis = 0.6)
-  plot(NO2_Concentration ~ no_of_weeks,data = data.2020, type="n",ylim=c(00,ylim),xlab="Date", ylab=paste0("NO2 estimates"), bty="l", xaxt="n", cex.main=0.5, cex.lab=0.6, cex.axis=0.4)
+  plot(NO2_Concentration ~ no_of_weeks,data = data.2020, type="n",ylim=c(00,ylim),xlab="Date", ylab=expression(paste(NO[2], " ", "estimates, (mol/", m^2, ")")), bty="l", xaxt="n", cex.main=0.5, cex.lab=0.6, cex.axis=0.4, las = 1)
   points(NO2_Concentration ~ no_of_weeks,data = data.2020,cex=0.7,pch=16,col=alpha(col[2],0.5))
   date.list <- data$Date %>% as.Date() %>% format("%b %d")
   date.list <- date.list[1:24]
@@ -608,7 +621,7 @@ period_scatter_plot <- function(data,ylim,location,lockdown.date,index.type,mode
   date.list.19 <- data$Date[1:24]
   date.list.20 <- data$Date[25:48]
   index <- which(date.list.20 %in% lockdown)
-  title(paste(location,"NO2,", index.type, "as interruption,\n", as.character(format(date.list.19[[index-12]], "%b %d %Y")), "-", as.character(format(date.list.19[[index+11]], "%b %d %Y")), "vs", as.character(format((date.list.19[[index-12]] %m+% years(1)),"%b %d %Y")), "-", as.character(format((date.list.19[[index+11]] %m+% years(1)),"%b %d %Y"))), cex = 0.5)
+  title(paste(location,"NO2,", index.type, "as interruption,\n", as.character(format(date.list.19[[index-12]], "%b %d %Y")), "-", as.character(format(date.list.19[[index+11]], "%b %d %Y")), "vs", as.character(format((date.list.19[[index-12]] %m+% years(1)),"%b %d %Y")), "-", as.character(format((date.list.19[[index+11]] %m+% years(1)),"%b %d %Y"))), cex = 0.4)
 
   # to plot the counterfactual scenario we create a data frame as if covid lockdown (the intervention) was never being implemented
     datanew.ctr <- data.frame(NO2_Concentration=mean(data$NO2_Concentration),covid_lockdown=0, no_of_weeks=c((1:240/10), (1:240/10)), year2020 = rep(c(0,1),c(240, 240)))
@@ -623,7 +636,7 @@ period_scatter_plot <- function(data,ylim,location,lockdown.date,index.type,mode
 #Saves plots as PDFs in urban/rural pairs. 
 plot.save.fxn <- function(location) {
   plot1 <- cowplot::plot_grid(urban.plots[[1]], rural.plots[[1]], ncol = 2, labels = c('A', 'B'))
-  ggsave(paste0(location, ".schoolclosing.pdf"), path = "ITS_plots", plot1, width = 17, height = 10, units = "cm")
+  ggsave(paste0(location, ".schoolclosing.pdf"), path = "ITS_plots", plot1, width = 20, height = 10, units = "cm")
   plot2 <- cowplot::plot_grid(urban.plots[[2]], rural.plots[[2]], ncol = 2, labels = c('C', 'D'))
   ggsave(paste0(location, ".workplaceclosing.pdf"), path = "ITS_plots", plot2, width = 17, height = 10, units = "cm")
   plot3 <- cowplot::plot_grid(urban.plots[[3]], rural.plots[[3]], ncol = 2, labels = c('E', 'F'))
@@ -686,7 +699,9 @@ results.df.fxn <- function(model.list, index.titles, location) {
   names(model.list) <- index.titles
   # tidy them up
   sep.df <- purrr::pmap(list(model.list), broom::tidy)
-  sep.df <- purrr::map(sep.df, function(x) {x %>% .[c(6, 8), ] %>% select(Predictors = term, p = p.value)
+  #sep.df <- purrr::map(sep.df, function(x) {x %>% .[c(6, 8), ] %>% select(Predictors = term, p = p.value)
+  #})
+  sep.df <- purrr::map(sep.df, function(x) {x %>% .[c(8), ] %>% select(Predictors = term, p = p.value)
   })
   # set the list names at the beginning of each column
   sep.df <- purrr::imap(sep.df, ~purrr::set_names(.x, paste(.y, names(.x), sep = "_")))
@@ -700,17 +715,17 @@ results.df.fxn <- function(model.list, index.titles, location) {
 ```
 
 ### World 
-```{r,fig.width = 6, fig.height = 4, eval = FALSE}
+```{r,fig.width = 6, fig.height = 4, eval = TRUE}
 #Urban and rural data frame lists. 
 world.urban.df.list <- purrr::pmap(list("World", "urban", "whodeclaration", as.Date("2020-01-23")), NO2.df.filter.fxn)
-world.rural.df.list <- purrr::pmap(list("World", "urban", "whodeclaration", as.Date("2020-01-23")), NO2.df.filter.fxn)
+world.rural.df.list <- purrr::pmap(list("World", "rural", "whodeclaration", as.Date("2020-01-23")), NO2.df.filter.fxn)
 
 #Scatter plots
 purrr::pmap(list(world.urban.df.list, 10E-5, "Urban World", "WHO Declaration of Pandemic"), scatter_gplot)
 purrr::pmap(list(world.rural.df.list, 10E-5, "Rural World", "WHO Declaration of Pandemic"), scatter_gplot)
 ```
 
-```{r, fig.width = 8, fig.height = 8, eval = FALSE}
+```{r, fig.width = 8, fig.height = 8, eval = TRUE}
 #Tabulate pollution before and after lockdown
 purrr::map(world.urban.df.list, function(x) {summary((filter(x, year2020==1))$NO2_Concentration[(filter(x, year2020==1))$covid_lockdown==0])
   }) 
@@ -727,13 +742,13 @@ world.urban.model.list <- purrr::pmap(list(world.urban.df.list), function(x) {lm
 })
 purrr::map(world.urban.model.list, function(x) {summary(x)
   }) #Summaries for each index model.
-sjPlot::tab_model(world.urban.model.list, terms = c("year2020:covid_lockdown", "no_of_weeks:year2020:covid_lockdown"), title = "ITS: Urban World Nitrogen Dioxide Concentrations During Lockdown, Significance of Different Lockdown Policies", show.ci = FALSE, dv.labels = paste(index.title.list)) #Table of p values. 
+sjPlot::tab_model(world.urban.model.list, terms = c("year2020:covid_lockdown", "no_of_weeks:year2020:covid_lockdown"), title = "ITS: Urban World Nitrogen Dioxide Concentrations During Lockdown, Significance of Different Lockdown Policies", show.ci = FALSE, dv.labels = paste("WHO declaration of pandemic")) #Table of p values. 
 
 world.rural.model.list <- purrr::pmap(list(world.rural.df.list), function(x) {lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020, data=x) 
 })
 purrr::map(world.rural.model.list, function(x) {summary(x)
   }) #Summaries for each index model.
-sjPlot::tab_model(world.rural.model.list, terms = c("year2020:covid_lockdown", "no_of_weeks:year2020:covid_lockdown"), title = "ITS: Rural World Nitrogen Dioxide Concentrations During Lockdown, Significance of Different Lockdown Policies", show.ci = FALSE, dv.labels = paste(index.title.list)) #Table of p values. 
+sjPlot::tab_model(world.rural.model.list, terms = c("year2020:covid_lockdown", "no_of_weeks:year2020:covid_lockdown"), title = "ITS: Rural World Nitrogen Dioxide Concentrations During Lockdown, Significance of Different Lockdown Policies", show.ci = FALSE, dv.labels = paste("WHO declaration of pandemic")) #Table of p values. 
 
 #Plot
 urban.plot.fxn <- function(country, n) {
@@ -749,8 +764,22 @@ rural.plot.fxn <- function(country, n) {
   }
 }
 rural.plots <- purrr::pmap(list("World", 1), rural.plot.fxn)
-plot.save.fxn("World")
-plot.print.fxn()
+
+#Saves plots as PDFs in urban/rural pairs. 
+world.plot.save.fxn <- function(location) {
+  plot8 <- plot_grid(urban.plots[[1]], rural.plots[[1]], ncol = 2, labels = c('A', 'B'))
+  ggsave(paste0(location, ".restricttravel.pdf"), path = "ITS_plots", plot8, width = 17, height = 10, units = "cm")
+}
+
+world.plot.print.fxn <- function() {
+  plot8 <- plot_grid(urban.plots[[1]], rural.plots[[1]], ncol = 2, labels = c('A', 'B'))
+  plot.a <- plot_grid(plot8, NULL, ncol = 1)
+  l <- list(plot.a)
+  return(l)
+}
+
+world.plot.save.fxn("World")
+world.plot.print.fxn()
 ```
 
 ```{r, fig.width = 6, fig.height = 4, eval = FALSE}
@@ -1134,12 +1163,12 @@ purrr::pmap(list(germany.rural.df.list, "rural Germany", index.title.list[c(1:4,
 ### Japan
 ```{r,fig.width = 6, fig.height = 4,  eval = TRUE}
 #Urban and rural data frame lists. 
-japan.urban.df.list <- purrr::pmap(list("Japan", "urban", file.index.list[c(1:3, 6:9)], stringencyindex.split.country.df[[6]]$lockdown.date), NO2.df.filter.fxn)
-japan.rural.df.list <- purrr::pmap(list("Japan", "rural", file.index.list[c(1:3, 6:9)], stringencyindex.split.country.df[[6]]$lockdown.date), NO2.df.filter.fxn)
+japan.urban.df.list <- purrr::pmap(list("Japan", "urban", file.index.list[c(1:3, 6:8)], stringencyindex.split.country.df[[6]]$lockdown.date), NO2.df.filter.fxn)
+japan.rural.df.list <- purrr::pmap(list("Japan", "rural", file.index.list[c(1:3, 6:8)], stringencyindex.split.country.df[[6]]$lockdown.date), NO2.df.filter.fxn)
 
 #Scatter plots
-purrr::pmap(list(japan.urban.df.list, 10E-5, "Urban Japan", index.title.list[c(1:3, 6:9)]), scatter_gplot)
-purrr::pmap(list(japan.rural.df.list, 10E-5, "Rural Japan", index.title.list[c(1:3, 6:9)]), scatter_gplot)
+purrr::pmap(list(japan.urban.df.list, 10E-5, "Urban Japan", index.title.list[c(1:3, 6:8)]), scatter_gplot)
+purrr::pmap(list(japan.rural.df.list, 10E-5, "Rural Japan", index.title.list[c(1:3, 6:8)]), scatter_gplot)
 ```
 
 ```{r, fig.width = 8, fig.height = 8, eval = TRUE}
@@ -1159,27 +1188,27 @@ japan.urban.model.list <- purrr::pmap(list(japan.urban.df.list), function(x) {lm
 })
 purrr::map(japan.urban.model.list, function(x) {summary(x)
   }) #Summaries for each index model.
-sjPlot::tab_model(japan.urban.model.list, terms = c("year2020:covid_lockdown", "no_of_weeks:year2020:covid_lockdown"), title = "ITS: Urban Japan Nitrogen Dioxide Concentrations During Lockdown, Significance of Different Lockdown Policies", show.ci = FALSE, dv.labels = paste(index.title.list[c(1:3, 6:9)])) #Table of p values. 
+sjPlot::tab_model(japan.urban.model.list, terms = c("year2020:covid_lockdown", "no_of_weeks:year2020:covid_lockdown"), title = "ITS: Urban Japan Nitrogen Dioxide Concentrations During Lockdown, Significance of Different Lockdown Policies", show.ci = FALSE, dv.labels = paste(index.title.list[c(1:3, 6:8)])) #Table of p values. 
 japan.rural.model.list <- purrr::pmap(list(japan.rural.df.list), function(x) {lm(NO2_Concentration ~ no_of_weeks*year2020 + covid_lockdown*year2020 + no_of_weeks*covid_lockdown*year2020, data=x) 
 })
 purrr::map(japan.rural.model.list, function(x) {summary(x)
   }) #Summaries for each index model.
-sjPlot::tab_model(japan.rural.model.list, terms = c("year2020:covid_lockdown", "no_of_weeks:year2020:covid_lockdown"), title = "ITS: Rural Japan Nitrogen Dioxide Concentrations During Lockdown, Significance of Different Lockdown Policies", show.ci = FALSE, dv.labels = paste(index.title.list[c(1:3, 6:9)])) #Table of p values. 
+sjPlot::tab_model(japan.rural.model.list, terms = c("year2020:covid_lockdown", "no_of_weeks:year2020:covid_lockdown"), title = "ITS: Rural Japan Nitrogen Dioxide Concentrations During Lockdown, Significance of Different Lockdown Policies", show.ci = FALSE, dv.labels = paste(index.title.list[c(1:3, 6:8)])) #Table of p values. 
 
 #Plot
 urban.plot.fxn <- function(country, n) {
   function() {
-  period_scatter_plot(japan.urban.df.list[[n]], ylim=10E-5, paste("Urban", country), stringencyindex.split.country.df[[6]]$lockdown.date[[n]], index.title.list[c(1:3, 6:9)][[n]], japan.urban.model.list[[n]])
+  period_scatter_plot(japan.urban.df.list[[n]], ylim=10E-5, paste("Urban", country), stringencyindex.split.country.df[[6]]$lockdown.date[[n]], index.title.list[c(1:3, 6:8)][[n]], japan.urban.model.list[[n]])
   }
 }
-urban.plots <- purrr::pmap(list("Japan", 1:7), urban.plot.fxn)
+urban.plots <- purrr::pmap(list("Japan", 1:6), urban.plot.fxn)
 
 rural.plot.fxn <- function(country, n) {
   function() {
-  period_scatter_plot(japan.rural.df.list[[n]], ylim=10E-5, paste("Rural", country), stringencyindex.split.country.df[[6]]$lockdown.date[[n]], index.title.list[c(1:3, 6:9)][[n]], japan.rural.model.list[[n]])
+  period_scatter_plot(japan.rural.df.list[[n]], ylim=10E-5, paste("Rural", country), stringencyindex.split.country.df[[6]]$lockdown.date[[n]], index.title.list[c(1:3, 6:8)][[n]], japan.rural.model.list[[n]])
   }
 }
-rural.plots <- purrr::pmap(list("Japan", 1:7), rural.plot.fxn)
+rural.plots <- purrr::pmap(list("Japan", 1:6), rural.plot.fxn)
 
 #Saves plots as PDFs in urban/rural pairs. 
 japan.plot.save.fxn <- function(location) {
@@ -1195,8 +1224,6 @@ japan.plot.save.fxn <- function(location) {
   ggsave(paste0(location, ".restrictinternal.pdf"), path = "ITS_plots", plot7, width = 17, height = 10, units = "cm")
   plot8 <- plot_grid(urban.plots[[6]], rural.plots[[6]], ncol = 2, labels = c('K', 'L'))
   ggsave(paste0(location, ".restricttravel.pdf"), path = "ITS_plots", plot8, width = 17, height = 10, units = "cm")
-  plot9 <- plot_grid(urban.plots[[7]], rural.plots[[7]], ncol = 2, labels = c('M', 'N'))
-  ggsave(paste0(location, ".stringencyindex.pdf"), path = "ITS_plots", plot9, width = 17, height = 10, units = "cm")
 }
 
 japan.plot.print.fxn <- function() {
@@ -1206,12 +1233,10 @@ japan.plot.print.fxn <- function() {
   plot6 <- plot_grid(urban.plots[[4]], rural.plots[[4]], ncol = 2, labels = c('G', 'H'))
   plot7 <- plot_grid(urban.plots[[5]], rural.plots[[5]], ncol = 2, labels = c('I', 'J'))
   plot8 <- plot_grid(urban.plots[[6]], rural.plots[[6]], ncol = 2, labels = c('K', 'L'))
-  plot9 <- plot_grid(urban.plots[[7]], rural.plots[[7]], ncol = 2, labels = c('M', 'N'))
   plot.a <- plot_grid(plot1, plot2, ncol = 1)
   plot.b <- plot_grid(plot3, plot6, ncol = 1)
   plot.c <- plot_grid(plot7, plot8, ncol = 1)
-  plot.d <- plot_grid(plot9, NULL, ncol = 1)
-  l <- list(plot.a, plot.b, plot.c, plot.d)
+  l <- list(plot.a, plot.b, plot.c)
   return(l)
 }
 
@@ -1220,8 +1245,8 @@ japan.plot.print.fxn()
 ```
 
 ```{r,fig.width = 6, fig.height = 4, eval = TRUE}
-purrr::pmap(list(japan.urban.df.list, "urban Japan", index.title.list[c(1:3, 6:9)]), res.fxn) #Residuals plots. 
-purrr::pmap(list(japan.rural.df.list, "rural Japan", index.title.list[c(1:3, 6:9)]), res.fxn)
+purrr::pmap(list(japan.urban.df.list, "urban Japan", index.title.list[c(1:3, 6:8)]), res.fxn) #Residuals plots. 
+purrr::pmap(list(japan.rural.df.list, "rural Japan", index.title.list[c(1:3, 6:8)]), res.fxn)
 ```
 
 
@@ -2173,8 +2198,8 @@ skorea.urban.results <- results.df.fxn(southkorea.urban.model.list, index.title.
 skorea.rural.results <- results.df.fxn(southkorea.rural.model.list, index.title.list[c(1:4, 6:9)], "South Korea")
 germany.urban.results <- results.df.fxn(germany.urban.model.list, index.title.list[c(1:4, 6:9)], "Germany")
 germany.rural.results <- results.df.fxn(germany.rural.model.list, index.title.list[c(1:4, 6:9)], "Germany")
-japan.urban.results <- results.df.fxn(japan.urban.model.list, index.title.list[c(1:3, 6:9)], "Japan")
-japan.rural.results <- results.df.fxn(japan.rural.model.list, index.title.list[c(1:3, 6:9)], "Japan")
+japan.urban.results <- results.df.fxn(japan.urban.model.list, index.title.list[c(1:3, 6:8)], "Japan")
+japan.rural.results <- results.df.fxn(japan.rural.model.list, index.title.list[c(1:3, 6:8)], "Japan")
 panama.urban.results <- results.df.fxn(panama.urban.model.list, index.title.list, "Panama")
 panama.rural.results <- results.df.fxn(panama.rural.model.list, index.title.list, "Panama")
 guatemala.urban.results <- results.df.fxn(guatemala.urban.model.list, index.title.list, "Guatemala")
@@ -2206,13 +2231,23 @@ congo.rural.results <- results.df.fxn(congo.rural.model.list, index.title.list, 
 nigeria.urban.results <- results.df.fxn(nigeria.urban.model.list, index.title.list, "Nigeria")
 nigeria.rural.results <- results.df.fxn(nigeria.rural.model.list, index.title.list, "Nigeria")
 
+#results.avg.NO2 <- df.top3$Mean_Urban_NO2 %>% rep(., each = 2)
+results.avg.NO2 <- df.top3$Mean_Urban_NO2 
+
+
 urban.results.df <- gtools::smartbind(poland.urban.results, slovakia.urban.results, czechia.urban.results, skorea.urban.results, germany.urban.results, japan.urban.results, panama.urban.results, guatemala.urban.results, brazil.urban.results, iraq.urban.results, egypt.urban.results, syria.urban.results, india.urban.results, pakistan.urban.results, bangladesh.urban.results, china.urban.results, nkorea.urban.results, malaysia.urban.results, southafrica.urban.results, congo.urban.results, nigeria.urban.results)
-urban.results.df <- rename(urban.results.df, `School Closures` = `school closures_p`, `Workplace Closures` = `workplace closures_p`, `Cancelled Public Events` = `cancelled public events_p`, `Restrictions on Gatherings` = `restrictions on gatherings_p`, `Public Transport Closures` = `public transport closures_p`, `Stay at Home Orders` = `stay at home orders_p`, `Internal Travel Restrictions` = `restrictions on internal travel_p`, `International Travel Restrictions` = `restrictions on international travel_p`, `Overall Lockdown Stringency Index` = `overall lockdown stringency index_p`)
-urban.results.df[, 3:11] <- round(urban.results.df[, 3:11], digits = 3)
+urban.results.df <- rename(urban.results.df, `School Closures` = `school closures_p`, `Workplace Closures` = `workplace closures_p`, `Cancelled Public Events` = `cancelled public events_p`, `Restrictions on Gatherings` = `restrictions on gatherings_p`, `Public Transport Closures` = `public transport closures_p`, `Stay at Home Orders` = `stay at home orders_p`, `Internal Travel Restrictions` = `restrictions on internal travel_p`, `International Travel Restrictions` = `restrictions on international travel_p`, `Overall Lockdown Stringency Index` = `lockdown stringency index_p`)
+urban.results.df <- cbind(urban.results.df, `Average Urban NO2 (mol/m^2)` = results.avg.NO2)
+urban.results.df <- urban.results.df %>% relocate(`Average Urban NO2 (mol/m^2)`, .after = Predictors)
+urban.results.df[, 4:12] <- round(urban.results.df[, 4:12], digits = 3)
+urban.results.df[, 3] <- scales::scientific(urban.results.df[, 3], digits = 3)
 
 rural.results.df <- gtools::smartbind(poland.rural.results, slovakia.rural.results, czechia.rural.results, skorea.rural.results, germany.rural.results, japan.rural.results, panama.rural.results, guatemala.rural.results, brazil.rural.results, iraq.rural.results, egypt.rural.results, syria.rural.results, india.rural.results, pakistan.rural.results, bangladesh.rural.results, china.rural.results, nkorea.rural.results, malaysia.rural.results, southafrica.rural.results, congo.rural.results, nigeria.rural.results)
-rural.results.df <- rename(rural.results.df, `School Closures` = `school closures_p`, `Workplace Closures` = `workplace closures_p`, `Cancelled Public Events` = `cancelled public events_p`, `Restrictions on Gatherings` = `restrictions on gatherings_p`, `Public Transport Closures` = `public transport closures_p`, `Stay at Home Orders` = `stay at home orders_p`, `Internal Travel Restrictions` = `restrictions on internal travel_p`, `International Travel Restrictions` = `restrictions on international travel_p`, `Overall Lockdown Stringency Index` = `overall lockdown stringency index_p`)
-rural.results.df[, 3:11] <- round(rural.results.df[, 3:11], digits = 3)
+rural.results.df <- rename(rural.results.df, `School Closures` = `school closures_p`, `Workplace Closures` = `workplace closures_p`, `Cancelled Public Events` = `cancelled public events_p`, `Restrictions on Gatherings` = `restrictions on gatherings_p`, `Public Transport Closures` = `public transport closures_p`, `Stay at Home Orders` = `stay at home orders_p`, `Internal Travel Restrictions` = `restrictions on internal travel_p`, `International Travel Restrictions` = `restrictions on international travel_p`, `Overall Lockdown Stringency Index` = `lockdown stringency index_p`)
+rural.results.df <- cbind(rural.results.df, `Average Urban NO2 (mol/m^2)` = results.avg.NO2)
+rural.results.df <- rural.results.df %>% relocate(`Average Urban NO2 (mol/m^2)`, .after = Predictors)
+rural.results.df[, 4:12] <- round(rural.results.df[, 4:12], digits = 3)
+rural.results.df[, 3] <- scales::scientific(rural.results.df[, 3], digits = 3)
 
 table.fxn <- function(data, type, location) {
 gt_tbl <- data %>% gt(rowname_col = "Location") 
@@ -2221,34 +2256,51 @@ gt_tbl.mod <-
   gt_tbl %>%
   tab_header(
     title = md(paste0("**", location, " Nitrogen Dioxide Concentrations During Lockdown**")),
-    subtitle = "Significance of Varying Lockdown Measures on Ambient NO2") %>% 
+    #main=bquote(.(monitor)~"EPA Monitor vs Sentinel Satellite"~NO[2]))
+    subtitle = md("Significance of Varying Lockdown Measures on Ambient NO2")) %>% 
   tab_row_group(
-    label = md("**Sub-Saharan Africa**"), 
-    rows = 37:42) %>%
+    label = md(html("**Sub-Saharan<br>Africa**")), 
+    rows = 19:21) %>%
   tab_row_group(
-    label = md(paste("**Southeast Asia, East Asia,", "\nand Oceania**")), 
-    rows = 31:36) %>%
+    label = md(html("**Southeast Asia, East<br>Asia, and Oceania**")), 
+    rows = 16:18) %>%
   tab_row_group(
     label = md("**South Asia**"), 
-    rows = 25:30) %>%
+    rows = 13:15) %>%
   tab_row_group(
-    label = md(paste("**North Africa and", "\nthe Middle East**")), 
-    rows = 19:24) %>%
+    label = md(html("**North Africa and<br>the Middle East**")), 
+    rows = 10:12) %>%
   tab_row_group(
-    label = md(paste("**Latin America", "\nand Caribbean**")), 
-    rows = 13:18) %>%
+    label = md(html("**Latin America<br>and Caribbean**")), 
+    rows = 7:9) %>%
   tab_row_group(
     label = md("**High-income**"), 
-    rows = 7:12) %>%
+    rows = 4:6) %>%
   tab_row_group(
-    label = md(paste("**Central Europe,", "\nEastern Europe,", "\nand Central Asia**")), 
-    rows = 1:6) %>% 
+    label = md(html("**Central Europe,<br>Eastern Europe,<br>and Central Asia**")), 
+    rows = 1:3) %>% 
   tab_spanner(
     label = md("*p* value"),
-    columns = 3:11) %>% 
-  tab_style(
-    style = list(cell_text(weight = "bold")),
-    locations = cells_column_labels())
+    columns = 4:12) %>% 
+  cols_label(
+    Predictors = md(html("**Predictors**")),
+  	`Average Urban NO2 (mol/m^2)`	= md(html("**Average Urban<br>NO2 (mol/m^2)**")), 
+  	`School Closures` = md(html("**School<br>Closures**")), 
+    `Workplace Closures` = md(html("**Workplace<br>Closures**")), 
+    `Cancelled Public Events` = md(html("**Cancelled<br>Public Events**")), 
+    `Restrictions on Gatherings` = md(html("**Restrictions<br>on Gatherings**")),
+    `Public Transport Closures` = md(html("**Public<br>Transport<br>Closures**")), 
+    `Stay at Home Orders` = md(html("**Stay at<br>Home Orders**")),
+    `Internal Travel Restrictions` = md(html("**Internal Travel<br>Restrictions**")),
+    `International Travel Restrictions` = md(html("**International<br>Travel<br>Restrictions**")),
+    `Overall Lockdown Stringency Index` = md(html("**Overall Lockdown<br>Stringency Index**"))
+  ) %>%
+  cols_align(
+    align = "center")
+
+  #tab_style(
+  #  style = list(cell_text(weight = "bold")),
+  #  locations = cells_column_labels()) 
 
 
   gt_tbl.mod %>% 
@@ -2299,6 +2351,8 @@ gt_tbl.mod <-
       rows = `Overall Lockdown Stringency Index` <= 0.05)) %>%
   tab_source_note(
     source_note = md("**Bolded** *p* values signify *p*<.05"))%>%
+  tab_source_note(
+    source_note = md("Missing *p* values signify that the index date either falls outside the study period, the type of lockdown never occurred, or there is no date in data set."))%>%
   gtsave(filename= paste0(as.character(type), ".html"))
 }
 table.fxn(urban.results.df, "urban.results", "Urban")
